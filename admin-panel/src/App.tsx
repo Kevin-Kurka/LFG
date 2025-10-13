@@ -1,26 +1,40 @@
 import React from 'react';
-import logo from './logo.svg';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import './App.css';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <div className="App">
+        <nav className="sidebar">
+          <ul>
+            <li><Link to="/">Dashboard</Link></li>
+            <li><Link to="/users">Users</Link></li>
+            <li><Link to="/markets">Markets</Link></li>
+          </ul>
+        </nav>
+        <main className="content">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/markets" element={<Markets />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
+}
+
+function Dashboard() {
+  return <h2>Dashboard</h2>;
+}
+
+function Users() {
+  return <h2>Users</h2>;
+}
+
+function Markets() {
+  return <h2>Markets</h2>;
 }
 
 export default App;
