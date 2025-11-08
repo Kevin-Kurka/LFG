@@ -133,15 +133,29 @@ func PlaceOrder(w http.ResponseWriter, r *http.Request) {
 		"quantity":    req.Quantity,
 	}
 
-	submitBody, _ := json.Marshal(submitReq)
-	resp, err := http.Post(matchingEngineURL+"/submit", "application/json", bytes.NewBuffer(submitBody))
+	submitBody, err := json.Marshal(submitReq)
 	if err != nil {
-		log.Printf("Failed to submit to matching engine: %v", err)
-		// Order is still created in DB, will be processed eventually
+		log.Printf("Failed to marshal submit request: %v", err)
 	} else {
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("Matching engine response: %s", string(body))
+		// Create HTTP client with timeout
+		client := &http.Client{Timeout: 10 * time.Second}
+		httpReq, err := http.NewRequest("POST", matchingEngineURL+"/submit", bytes.NewBuffer(submitBody))
+		if err != nil {
+			log.Printf("Failed to create request: %v", err)
+		} else {
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("X-Internal-API-Key", os.Getenv("INTERNAL_API_KEY"))
+
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				log.Printf("Failed to submit to matching engine: %v", err)
+				// Order is still created in DB, will be processed eventually
+			} else {
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				log.Printf("Matching engine response: %s", string(body))
+			}
+		}
 	}
 
 	var limitPriceCredits float64
@@ -198,42 +212,40 @@ func CancelOrder(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Get order to check ownership and status
-	var order models.Order
+	// Atomically update order status with validation to prevent race conditions
+	// This ensures we only cancel orders that are in a valid state and owned by the user
 	var contractID uuid.UUID
+	var updatedStatus string
 	err = database.GetDB().QueryRow(ctx, `
-		SELECT id, user_id, contract_id, type, status, quantity, quantity_filled, limit_price_credits, created_at
-		FROM orders
-		WHERE id = $1
-	`, orderID).Scan(&order.ID, &order.UserID, &contractID, &order.Type, &order.Status, &order.Quantity, &order.QuantityFilled, &order.LimitPriceCredits, &order.CreatedAt)
-
-	if err == pgx.ErrNoRows {
-		response.NotFound(w, "order not found", nil)
-		return
-	}
-	if err != nil {
-		log.Printf("Failed to query order: %v", err)
-		response.InternalServerError(w, "failed to query order", err)
-		return
-	}
-
-	if order.UserID != userID {
-		response.Unauthorized(w, "not authorized to cancel this order", nil)
-		return
-	}
-
-	if order.Status == "FILLED" || order.Status == "CANCELLED" {
-		response.BadRequest(w, "order cannot be cancelled", nil)
-		return
-	}
-
-	// Update order status
-	_, err = database.GetDB().Exec(ctx, `
 		UPDATE orders
 		SET status = 'CANCELLED'
-		WHERE id = $1
-	`, orderID)
+		WHERE id = $1 AND user_id = $2 AND status NOT IN ('FILLED', 'CANCELLED')
+		RETURNING contract_id, status
+	`, orderID, userID).Scan(&contractID, &updatedStatus)
 
+	if err == pgx.ErrNoRows {
+		// Check why it failed - either not found, not authorized, or already in final state
+		var checkStatus string
+		var checkUserID uuid.UUID
+		checkErr := database.GetDB().QueryRow(ctx, `
+			SELECT user_id, status FROM orders WHERE id = $1
+		`, orderID).Scan(&checkUserID, &checkStatus)
+
+		if checkErr == pgx.ErrNoRows {
+			response.NotFound(w, "order not found", nil)
+			return
+		}
+		if checkUserID != userID {
+			response.Unauthorized(w, "not authorized to cancel this order", nil)
+			return
+		}
+		if checkStatus == "FILLED" || checkStatus == "CANCELLED" {
+			response.BadRequest(w, "order cannot be cancelled", nil)
+			return
+		}
+		response.InternalServerError(w, "failed to cancel order", nil)
+		return
+	}
 	if err != nil {
 		log.Printf("Failed to cancel order: %v", err)
 		response.InternalServerError(w, "failed to cancel order", err)
@@ -251,12 +263,26 @@ func CancelOrder(w http.ResponseWriter, r *http.Request) {
 		"contract_id": contractID.String(),
 	}
 
-	cancelBody, _ := json.Marshal(cancelReq)
-	resp, err := http.Post(matchingEngineURL+"/cancel", "application/json", bytes.NewBuffer(cancelBody))
+	cancelBody, err := json.Marshal(cancelReq)
 	if err != nil {
-		log.Printf("Failed to notify matching engine: %v", err)
+		log.Printf("Failed to marshal cancel request: %v", err)
 	} else {
-		defer resp.Body.Close()
+		// Create HTTP client with timeout
+		client := &http.Client{Timeout: 10 * time.Second}
+		httpReq, err := http.NewRequest("POST", matchingEngineURL+"/cancel", bytes.NewBuffer(cancelBody))
+		if err != nil {
+			log.Printf("Failed to create request: %v", err)
+		} else {
+			httpReq.Header.Set("Content-Type", "application/json")
+			httpReq.Header.Set("X-Internal-API-Key", os.Getenv("INTERNAL_API_KEY"))
+
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				log.Printf("Failed to notify matching engine: %v", err)
+			} else {
+				defer resp.Body.Close()
+			}
+		}
 	}
 
 	response.Success(w, map[string]string{"message": "order cancelled successfully"})

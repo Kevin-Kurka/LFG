@@ -10,6 +10,7 @@ import (
 
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/response"
+	"github.com/Kevin-Kurka/LFG/backend/common/validation"
 )
 
 type BuyCreditsRequest struct {
@@ -40,9 +41,21 @@ func BuyCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Amount <= 0 {
-		response.BadRequest(w, "amount must be positive", nil)
+	// Validate amount (min $1, max $10,000)
+	if err := validation.ValidateAmount(req.Amount, 0, 10000); err != nil {
+		response.BadRequest(w, err.Error(), nil)
 		return
+	}
+
+	// Validate payment method
+	if err := validation.ValidatePaymentMethod(req.PaymentMethod); err != nil {
+		response.BadRequest(w, err.Error(), nil)
+		return
+	}
+
+	// Sanitize payment details
+	if req.PaymentDetails != "" {
+		req.PaymentDetails = validation.SanitizeString(req.PaymentDetails)
 	}
 
 	// Mock payment processing (in production, integrate with Stripe/PayPal)
@@ -62,11 +75,28 @@ func BuyCredits(w http.ResponseWriter, r *http.Request) {
 		"description": "Credits purchased via " + req.PaymentMethod,
 	}
 
-	txBody, _ := json.Marshal(txReq)
-	resp, err := http.Post(walletServiceURL+"/internal/transactions", "application/json", bytes.NewBuffer(txBody))
+	txBody, err := json.Marshal(txReq)
+	if err != nil {
+		log.Printf("Failed to marshal transaction request: %v", err)
+		response.InternalServerError(w, "failed to process request", nil)
+		return
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("POST", walletServiceURL+"/internal/transactions", bytes.NewBuffer(txBody))
+	if err != nil {
+		log.Printf("Failed to create request: %v", err)
+		response.InternalServerError(w, "failed to process request", nil)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-API-Key", os.Getenv("INTERNAL_API_KEY"))
+
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Failed to create wallet transaction: %v", err)
-		response.InternalServerError(w, "failed to process credit purchase", err)
+		response.InternalServerError(w, "failed to process credit purchase", nil)
 		return
 	}
 	defer resp.Body.Close()
@@ -95,8 +125,9 @@ func SellCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Amount <= 0 {
-		response.BadRequest(w, "amount must be positive", nil)
+	// Validate amount (min $1, max $10,000)
+	if err := validation.ValidateAmount(req.Amount, 0, 10000); err != nil {
+		response.BadRequest(w, err.Error(), nil)
 		return
 	}
 
@@ -113,11 +144,28 @@ func SellCredits(w http.ResponseWriter, r *http.Request) {
 		"description": "Credits sold/withdrawn",
 	}
 
-	txBody, _ := json.Marshal(txReq)
-	resp, err := http.Post(walletServiceURL+"/internal/transactions", "application/json", bytes.NewBuffer(txBody))
+	txBody, err := json.Marshal(txReq)
+	if err != nil {
+		log.Printf("Failed to marshal transaction request: %v", err)
+		response.InternalServerError(w, "failed to process request", nil)
+		return
+	}
+
+	// Create HTTP client with timeout
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("POST", walletServiceURL+"/internal/transactions", bytes.NewBuffer(txBody))
+	if err != nil {
+		log.Printf("Failed to create request: %v", err)
+		response.InternalServerError(w, "failed to process request", nil)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-API-Key", os.Getenv("INTERNAL_API_KEY"))
+
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Failed to create wallet transaction: %v", err)
-		response.InternalServerError(w, "failed to process credit sale", err)
+		response.InternalServerError(w, "failed to process credit sale", nil)
 		return
 	}
 	defer resp.Body.Close()

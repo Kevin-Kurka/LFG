@@ -10,6 +10,7 @@ import (
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
 	"github.com/Kevin-Kurka/LFG/backend/common/response"
+	"github.com/Kevin-Kurka/LFG/backend/common/validation"
 	"github.com/Kevin-Kurka/LFG/backend/user-service/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -49,16 +50,13 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if req.Email == "" {
-		response.BadRequest(w, "email is required", nil)
+	if err := validation.ValidateEmail(req.Email); err != nil {
+		response.BadRequest(w, err.Error(), nil)
 		return
 	}
-	if req.Password == "" {
-		response.BadRequest(w, "password is required", nil)
-		return
-	}
-	if len(req.Password) < 8 {
-		response.BadRequest(w, "password must be at least 8 characters", nil)
+
+	if err := validation.ValidatePassword(req.Password); err != nil {
+		response.BadRequest(w, err.Error(), nil)
 		return
 	}
 
@@ -137,8 +135,12 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate input
-	if req.Email == "" || req.Password == "" {
-		response.BadRequest(w, "email and password are required", nil)
+	if req.Email == "" {
+		response.BadRequest(w, "email is required", nil)
+		return
+	}
+	if req.Password == "" {
+		response.BadRequest(w, "password is required", nil)
 		return
 	}
 

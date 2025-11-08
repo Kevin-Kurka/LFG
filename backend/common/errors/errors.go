@@ -3,6 +3,7 @@ package errors
 import (
 	"fmt"
 	"net/http"
+	"os"
 )
 
 // AppError represents an application error with HTTP status code
@@ -13,15 +14,23 @@ type AppError struct {
 }
 
 // NewAppError creates a new AppError
+// Error details are only included in development mode
 func NewAppError(code int, message string, err error) *AppError {
 	appErr := &AppError{
 		Code:    code,
 		Message: message,
 	}
-	if err != nil {
+	// Only include error details in development mode
+	if err != nil && isDevelopmentMode() {
 		appErr.Error = err.Error()
 	}
 	return appErr
+}
+
+// isDevelopmentMode checks if the app is running in development mode
+func isDevelopmentMode() bool {
+	env := os.Getenv("ENVIRONMENT")
+	return env == "" || env == "development" || env == "dev"
 }
 
 // BadRequest creates a 400 error

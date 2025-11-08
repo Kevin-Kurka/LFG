@@ -6,6 +6,13 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"strings"
+
+	"github.com/Kevin-Kurka/LFG/backend/common/auth"
+	"github.com/Kevin-Kurka/LFG/backend/common/middleware"
+	"github.com/rs/cors"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -16,6 +23,8 @@ func main() {
 	marketServiceURL, _ := url.Parse("http://localhost:8083")
 	creditExchangeURL, _ := url.Parse("http://localhost:8084")
 	notificationServiceURL, _ := url.Parse("http://localhost:8085")
+	sportsbookServiceURL, _ := url.Parse("http://localhost:8086")
+	cryptoServiceURL, _ := url.Parse("http://localhost:8087")
 
 	// Create reverse proxies for each service
 	userProxy := httputil.NewSingleHostReverseProxy(userServiceURL)
@@ -24,38 +33,57 @@ func main() {
 	marketProxy := httputil.NewSingleHostReverseProxy(marketServiceURL)
 	creditExchangeProxy := httputil.NewSingleHostReverseProxy(creditExchangeURL)
 	notificationProxy := httputil.NewSingleHostReverseProxy(notificationServiceURL)
+	sportsbookProxy := httputil.NewSingleHostReverseProxy(sportsbookServiceURL)
+	cryptoProxy := httputil.NewSingleHostReverseProxy(cryptoServiceURL)
 
-	// Define routing rules
-	http.Handle("/register", applyMiddleware(userProxy))
-	http.Handle("/login", applyMiddleware(userProxy))
-	http.Handle("/profile", applyMiddleware(userProxy))
+	// Create rate limiter (10 requests per second with burst of 20)
+	rateLimiter := middleware.NewIPRateLimiter(rate.Limit(10), 20)
 
-	http.Handle("/balance", applyMiddleware(walletProxy))
-	http.Handle("/transactions", applyMiddleware(walletProxy))
+	// Create a new ServeMux
+	mux := http.NewServeMux()
 
-	http.Handle("/orders/", applyMiddleware(orderProxy))
+	// Public routes (no auth required, but rate limited)
+	mux.Handle("/register", applyPublicMiddleware(rateLimiter, userProxy))
+	mux.Handle("/login", applyPublicMiddleware(rateLimiter, userProxy))
+	mux.Handle("/markets", applyPublicMiddleware(rateLimiter, marketProxy))
+	mux.Handle("/markets/", applyPublicMiddleware(rateLimiter, marketProxy))
 
-	http.Handle("/markets", applyMiddleware(marketProxy))
-	http.Handle("/markets/", applyMiddleware(marketProxy))
+	// Protected routes (require JWT auth + rate limiting)
+	mux.Handle("/profile", applyAuthMiddleware(rateLimiter, userProxy))
+	mux.Handle("/balance", applyAuthMiddleware(rateLimiter, walletProxy))
+	mux.Handle("/transactions", applyAuthMiddleware(rateLimiter, walletProxy))
+	mux.Handle("/orders/", applyAuthMiddleware(rateLimiter, orderProxy))
+	mux.Handle("/exchange/", applyAuthMiddleware(rateLimiter, creditExchangeProxy))
+	mux.Handle("/sportsbook/", applyAuthMiddleware(rateLimiter, sportsbookProxy))
+	mux.Handle("/crypto/", applyAuthMiddleware(rateLimiter, cryptoProxy))
 
-	http.Handle("/exchange/", applyMiddleware(creditExchangeProxy))
+	// WebSocket (rate limited only)
+	mux.Handle("/ws", applyPublicMiddleware(rateLimiter, notificationProxy))
 
-	http.Handle("/ws", applyMiddleware(notificationProxy))
+	// CORS configuration
+	allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	origins := []string{"http://localhost:3000"} // Default for development
+	if allowedOrigins != "" {
+		origins = strings.Split(allowedOrigins, ",")
+	}
+
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   origins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowCredentials: true,
+	})
 
 	fmt.Println("API Gateway listening on port 8000...")
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	log.Fatal(http.ListenAndServe(":8000", corsHandler.Handler(mux)))
 }
 
-// applyMiddleware is a placeholder for JWT authentication and rate limiting.
-func applyMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 1. Placeholder for Rate Limiting Middleware
-		// log.Println("Rate limit check would go here")
+// applyPublicMiddleware applies rate limiting to public endpoints
+func applyPublicMiddleware(rateLimiter *middleware.IPRateLimiter, next http.Handler) http.Handler {
+	return middleware.RateLimitMiddleware(rateLimiter)(next)
+}
 
-		// 2. Placeholder for JWT Authentication Middleware
-		// log.Println("JWT authentication would go here")
-
-		// Forward the request to the next handler (the reverse proxy)
-		next.ServeHTTP(w, r)
-	})
+// applyAuthMiddleware applies JWT authentication and rate limiting
+func applyAuthMiddleware(rateLimiter *middleware.IPRateLimiter, next http.Handler) http.Handler {
+	return middleware.RateLimitMiddleware(rateLimiter)(auth.AuthMiddleware(next))
 }

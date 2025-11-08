@@ -14,7 +14,8 @@ CREATE TABLE wallets (
     user_id UUID UNIQUE NOT NULL,
     balance_credits DECIMAL(18, 8) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT positive_balance CHECK (balance_credits >= 0)
 );
 
 -- Markets Table
@@ -27,7 +28,9 @@ CREATE TABLE markets (
     status VARCHAR(50) NOT NULL DEFAULT 'UPCOMING',
     expires_at TIMESTAMPTZ NOT NULL,
     resolved_at TIMESTAMPTZ NULL,
-    outcome VARCHAR(10) NULL
+    outcome VARCHAR(10) NULL,
+    CONSTRAINT valid_market_status CHECK (status IN ('UPCOMING', 'OPEN', 'CLOSED', 'RESOLVED', 'CANCELLED')),
+    CONSTRAINT valid_market_outcome CHECK (outcome IS NULL OR outcome IN ('YES', 'NO'))
 );
 
 -- Contracts Table
@@ -36,7 +39,8 @@ CREATE TABLE contracts (
     market_id UUID NOT NULL,
     side VARCHAR(10) NOT NULL,
     ticker VARCHAR(60) UNIQUE NOT NULL,
-    FOREIGN KEY (market_id) REFERENCES markets(id)
+    FOREIGN KEY (market_id) REFERENCES markets(id),
+    CONSTRAINT valid_contract_side CHECK (side IN ('YES', 'NO'))
 );
 
 -- Orders Table
@@ -52,7 +56,12 @@ CREATE TABLE orders (
     stop_price_credits DECIMAL(10, 8) NULL,
     created_at TIMESTAMPTZ NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (contract_id) REFERENCES contracts(id)
+    FOREIGN KEY (contract_id) REFERENCES contracts(id),
+    CONSTRAINT valid_order_type CHECK (type IN ('LIMIT', 'MARKET', 'STOP')),
+    CONSTRAINT valid_order_status CHECK (status IN ('PENDING', 'OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELLED')),
+    CONSTRAINT positive_quantity CHECK (quantity > 0),
+    CONSTRAINT valid_filled_quantity CHECK (quantity_filled >= 0 AND quantity_filled <= quantity),
+    CONSTRAINT valid_limit_price CHECK (limit_price_credits IS NULL OR (limit_price_credits >= 0 AND limit_price_credits <= 1))
 );
 
 -- Trades Table
@@ -66,7 +75,9 @@ CREATE TABLE trades (
     executed_at TIMESTAMPTZ NOT NULL,
     FOREIGN KEY (contract_id) REFERENCES contracts(id),
     FOREIGN KEY (maker_order_id) REFERENCES orders(id),
-    FOREIGN KEY (taker_order_id) REFERENCES orders(id)
+    FOREIGN KEY (taker_order_id) REFERENCES orders(id),
+    CONSTRAINT positive_trade_quantity CHECK (quantity > 0),
+    CONSTRAINT valid_trade_price CHECK (price_credits >= 0 AND price_credits <= 1)
 );
 
 -- Sportsbook Providers Table
@@ -193,18 +204,12 @@ CREATE TABLE user_bets (
     notes TEXT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (sportsbook_account_id) REFERENCES user_sportsbook_accounts(id),
-    FOREIGN KEY (event_id) REFERENCES sports_events(id) ON DELETE SET NULL
+    FOREIGN KEY (event_id) REFERENCES sports_events(id) ON DELETE SET NULL,
+    CONSTRAINT positive_stake CHECK (stake > 0),
+    CONSTRAINT positive_payout CHECK (potential_payout > 0),
+    CONSTRAINT valid_bet_status CHECK (status IN ('PENDING', 'ACTIVE', 'WON', 'LOST', 'VOID', 'CANCELLED'))
 );
 
--- Create indexes for performance
-CREATE INDEX idx_odds_event_sportsbook ON odds(event_id, sportsbook_id);
-CREATE INDEX idx_odds_market_type ON odds(market_type, is_active);
-CREATE INDEX idx_events_time ON sports_events(event_time);
-CREATE INDEX idx_events_sport ON sports_events(sport_id, status);
-CREATE INDEX idx_user_accounts_user ON user_sportsbook_accounts(user_id);
-CREATE INDEX idx_user_bets_user ON user_bets(user_id, status);
-CREATE INDEX idx_arbitrage_active ON arbitrage_opportunities(is_active, expires_at);
-CREATE INDEX idx_hedge_active ON hedge_opportunities(is_active, user_id);
 -- Wallet Transactions Table
 CREATE TABLE IF NOT EXISTS wallet_transactions (
     id UUID PRIMARY KEY,
@@ -219,5 +224,34 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Create indexes for performance
+-- User and wallet indexes
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_wallets_user ON wallets(user_id);
+
+-- Market and contract indexes
+CREATE INDEX idx_markets_status ON markets(status, expires_at);
+CREATE INDEX idx_markets_ticker ON markets(ticker);
+CREATE INDEX idx_contracts_market ON contracts(market_id);
+
+-- Order and trade indexes
+CREATE INDEX idx_orders_user ON orders(user_id, status, created_at DESC);
+CREATE INDEX idx_orders_contract ON orders(contract_id, status);
+CREATE INDEX idx_orders_status ON orders(status) WHERE status IN ('PENDING', 'OPEN');
+CREATE INDEX idx_trades_contract ON trades(contract_id, executed_at DESC);
+CREATE INDEX idx_trades_orders ON trades(maker_order_id, taker_order_id);
+
+-- Wallet transaction indexes
 CREATE INDEX idx_wallet_transactions_user ON wallet_transactions(user_id, created_at DESC);
 CREATE INDEX idx_wallet_transactions_type ON wallet_transactions(type);
+CREATE INDEX idx_wallet_transactions_reference ON wallet_transactions(reference_id) WHERE reference_id IS NOT NULL;
+
+-- Sportsbook indexes
+CREATE INDEX idx_odds_event_sportsbook ON odds(event_id, sportsbook_id);
+CREATE INDEX idx_odds_market_type ON odds(market_type, is_active);
+CREATE INDEX idx_events_time ON sports_events(event_time);
+CREATE INDEX idx_events_sport ON sports_events(sport_id, status);
+CREATE INDEX idx_user_accounts_user ON user_sportsbook_accounts(user_id);
+CREATE INDEX idx_user_bets_user ON user_bets(user_id, status);
+CREATE INDEX idx_arbitrage_active ON arbitrage_opportunities(is_active, expires_at);
+CREATE INDEX idx_hedge_active ON hedge_opportunities(is_active, user_id);

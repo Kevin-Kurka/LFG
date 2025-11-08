@@ -4,7 +4,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
+	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
 	"github.com/Kevin-Kurka/LFG/backend/market-service/handlers"
 	"github.com/gorilla/mux"
@@ -19,23 +21,34 @@ func main() {
 
 	router := mux.NewRouter()
 
-	// Market routes
+	// Public market routes (read-only)
 	router.HandleFunc("/markets", handlers.ListMarkets).Methods("GET")
-	router.HandleFunc("/markets", handlers.CreateMarket).Methods("POST")
 	router.HandleFunc("/markets/{id}", handlers.GetMarket).Methods("GET")
-	router.HandleFunc("/markets/{id}", handlers.UpdateMarket).Methods("PUT")
-	router.HandleFunc("/markets/{id}/resolve", handlers.ResolveMarket).Methods("POST")
 	router.HandleFunc("/markets/{id}/orderbook", handlers.GetOrderBook).Methods("GET")
+
+	// Admin routes (require admin API key)
+	adminRouter := router.PathPrefix("/markets").Subrouter()
+	adminRouter.Use(auth.AdminAPIKeyMiddleware)
+	adminRouter.HandleFunc("", handlers.CreateMarket).Methods("POST")
+	adminRouter.HandleFunc("/{id}", handlers.UpdateMarket).Methods("PUT")
+	adminRouter.HandleFunc("/{id}/resolve", handlers.ResolveMarket).Methods("POST")
 
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"healthy"}`))
 	}).Methods("GET")
 
+	// Get allowed origins from environment
+	allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	origins := []string{"http://localhost:3000"} // Default for development
+	if allowedOrigins != "" {
+		origins = strings.Split(allowedOrigins, ",")
+	}
+
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Admin-API-Key"},
 		AllowCredentials: true,
 	})
 

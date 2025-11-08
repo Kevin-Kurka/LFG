@@ -103,7 +103,10 @@ func GetTransactions(w http.ResponseWriter, r *http.Request) {
 		args = append(args, txType)
 	}
 
-	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(len(args)+1) + " OFFSET $" + strconv.Itoa(len(args)+2)
+	// Use proper parameter placeholders to prevent SQL injection
+	limitPlaceholder := len(args) + 1
+	offsetPlaceholder := len(args) + 2
+	query += " ORDER BY created_at DESC LIMIT $" + strconv.Itoa(limitPlaceholder) + " OFFSET $" + strconv.Itoa(offsetPlaceholder)
 	args = append(args, limit, offset)
 
 	rows, err := database.GetDB().Query(ctx, query, args...)
@@ -212,15 +215,19 @@ func CreateTransaction(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 
-	// Update wallet balance
+	// Update wallet balance with validation to prevent negative balances
 	var newBalance float64
 	err = tx.QueryRow(ctx, `
 		UPDATE wallets
 		SET balance_credits = balance_credits + $1
-		WHERE user_id = $2
+		WHERE user_id = $2 AND (balance_credits + $1) >= 0
 		RETURNING balance_credits
 	`, req.Amount, userID).Scan(&newBalance)
 
+	if err == pgx.ErrNoRows {
+		response.BadRequest(w, "insufficient balance", nil)
+		return
+	}
 	if err != nil {
 		log.Printf("Failed to update wallet balance: %v", err)
 		response.InternalServerError(w, "failed to update wallet balance", err)

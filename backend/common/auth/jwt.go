@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -28,10 +29,14 @@ type UserContext struct {
 }
 
 // GetJWTSecret returns the JWT secret from environment
+// Fails if JWT_SECRET is not set or is too short (minimum 32 characters)
 func GetJWTSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "default-secret-change-in-production"
+		log.Fatal("SECURITY ERROR: JWT_SECRET environment variable is not set. Application cannot start without a secure JWT secret.")
+	}
+	if len(secret) < 32 {
+		log.Fatalf("SECURITY ERROR: JWT_SECRET must be at least 32 characters long. Current length: %d", len(secret))
 	}
 	return []byte(secret)
 }

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
@@ -27,8 +28,9 @@ func main() {
 	router.HandleFunc("/balance", handlers.GetBalance).Methods("GET")
 	router.HandleFunc("/transactions", handlers.GetTransactions).Methods("GET")
 
-	// Internal route (no auth required for internal service calls)
+	// Internal route (requires internal API key for service-to-service calls)
 	internalRouter := mux.NewRouter()
+	internalRouter.Use(auth.InternalAPIKeyMiddleware)
 	internalRouter.HandleFunc("/internal/transactions", handlers.CreateTransaction).Methods("POST")
 
 	// Health check
@@ -38,10 +40,16 @@ func main() {
 	}).Methods("GET")
 
 	// CORS configuration
+	allowedOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	origins := []string{"http://localhost:3000"} // Default for development
+	if allowedOrigins != "" {
+		origins = strings.Split(allowedOrigins, ",")
+	}
+
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"*"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization", "X-Internal-API-Key"},
 		AllowCredentials: true,
 	})
 

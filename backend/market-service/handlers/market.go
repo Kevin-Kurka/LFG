@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
@@ -61,21 +62,19 @@ func ListMarkets(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Build query
+	// Build query with proper parameter placeholders
 	query := `SELECT id, ticker, question, rules, resolution_source, status, expires_at, resolved_at, outcome FROM markets WHERE 1=1`
 	args := []interface{}{}
-	argIdx := 1
 
 	if status != "" {
-		query += " AND status = $" + string(rune(argIdx+'0'))
+		query += " AND status = $" + strconv.Itoa(len(args)+1)
 		args = append(args, status)
-		argIdx++
 	}
 
 	if search != "" {
-		query += " AND (question ILIKE $" + string(rune(argIdx+'0')) + " OR ticker ILIKE $" + string(rune(argIdx+'0')) + ")"
-		args = append(args, "%"+search+"%")
-		argIdx++
+		searchPattern := "%" + search + "%"
+		query += " AND (question ILIKE $" + strconv.Itoa(len(args)+1) + " OR ticker ILIKE $" + strconv.Itoa(len(args)+1) + ")"
+		args = append(args, searchPattern)
 	}
 
 	query += " ORDER BY created_at DESC"
@@ -314,36 +313,30 @@ func UpdateMarket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Build dynamic update query
+	// Build dynamic update query with proper parameter placeholders
 	query := "UPDATE markets SET "
 	args := []interface{}{}
-	argIdx := 1
 	updates := []string{}
 
 	if req.Question != "" {
-		updates = append(updates, "question = $"+string(rune(argIdx+'0')))
+		updates = append(updates, "question = $"+strconv.Itoa(len(args)+1))
 		args = append(args, req.Question)
-		argIdx++
 	}
 	if req.Rules != "" {
-		updates = append(updates, "rules = $"+string(rune(argIdx+'0')))
+		updates = append(updates, "rules = $"+strconv.Itoa(len(args)+1))
 		args = append(args, req.Rules)
-		argIdx++
 	}
 	if req.ResolutionSource != "" {
-		updates = append(updates, "resolution_source = $"+string(rune(argIdx+'0')))
+		updates = append(updates, "resolution_source = $"+strconv.Itoa(len(args)+1))
 		args = append(args, req.ResolutionSource)
-		argIdx++
 	}
 	if req.Status != "" {
-		updates = append(updates, "status = $"+string(rune(argIdx+'0')))
+		updates = append(updates, "status = $"+strconv.Itoa(len(args)+1))
 		args = append(args, req.Status)
-		argIdx++
 	}
 	if req.ExpiresAt != nil {
-		updates = append(updates, "expires_at = $"+string(rune(argIdx+'0')))
+		updates = append(updates, "expires_at = $"+strconv.Itoa(len(args)+1))
 		args = append(args, *req.ExpiresAt)
-		argIdx++
 	}
 
 	if len(updates) == 0 {
@@ -355,7 +348,7 @@ func UpdateMarket(w http.ResponseWriter, r *http.Request) {
 	for i := 1; i < len(updates); i++ {
 		query += ", " + updates[i]
 	}
-	query += " WHERE id = $" + string(rune(argIdx+'0'))
+	query += " WHERE id = $" + strconv.Itoa(len(args)+1)
 	args = append(args, marketID)
 
 	_, err = database.GetDB().Exec(ctx, query, args...)

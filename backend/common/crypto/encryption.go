@@ -7,27 +7,24 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
 // GetEncryptionKey returns the encryption key from environment
-// In production, this should be a 32-byte key for AES-256
+// Fails if ENCRYPTION_KEY is not set or is not exactly 32 bytes for AES-256
 func GetEncryptionKey() []byte {
 	key := os.Getenv("ENCRYPTION_KEY")
 	if key == "" {
-		// Default key for development only - MUST be changed in production
-		key = "default-32-byte-encryption-key"
+		log.Fatal("SECURITY ERROR: ENCRYPTION_KEY environment variable is not set. Application cannot start without a secure encryption key.")
 	}
 
 	// Ensure key is exactly 32 bytes for AES-256
 	keyBytes := []byte(key)
-	if len(keyBytes) < 32 {
-		// Pad with zeros if too short
-		padded := make([]byte, 32)
-		copy(padded, keyBytes)
-		return padded
+	if len(keyBytes) != 32 {
+		log.Fatalf("SECURITY ERROR: ENCRYPTION_KEY must be exactly 32 bytes long for AES-256. Current length: %d", len(keyBytes))
 	}
-	return keyBytes[:32]
+	return keyBytes
 }
 
 // Encrypt encrypts plaintext using AES-256-GCM

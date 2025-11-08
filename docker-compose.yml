@@ -14,6 +14,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./database/crypto_schema.sql:/docker-entrypoint-initdb.d/03-crypto.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lfguser -d lfg"]
       interval: 10s
@@ -35,6 +36,7 @@ services:
       - CREDIT_EXCHANGE_URL=http://credit-exchange-service:8084
       - NOTIFICATION_SERVICE_URL=http://notification-service:8085
       - SPORTSBOOK_SERVICE_URL=http://sportsbook-service:8086
+      - CRYPTO_SERVICE_URL=http://crypto-service:8087
       - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - user-service
@@ -44,6 +46,7 @@ services:
       - credit-exchange-service
       - notification-service
       - sportsbook-service
+      - crypto-service
 
   user-service:
     build:
@@ -124,6 +127,21 @@ services:
     environment:
       - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  crypto-service:
+    build:
+      context: ./backend/crypto-service
+      dockerfile: Dockerfile
+    container_name: lfg-crypto-service
+    ports:
+      - "8087:8087"
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - PORT=8087
     depends_on:
       postgres:
         condition: service_healthy
