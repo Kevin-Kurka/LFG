@@ -1,0 +1,533 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: lfg-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lfg_db}
+      POSTGRES_USER: ${POSTGRES_USER:-lfg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./database/crypto-tables.sql:/docker-entrypoint-initdb.d/02-crypto-tables.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lfg_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: lfg-redis-prod
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # User Service
+  user-service:
+    build:
+      context: ./backend
+      dockerfile: user-service/Dockerfile
+    container_name: lfg-user-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: "8080"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Wallet Service
+  wallet-service:
+    build:
+      context: ./backend
+      dockerfile: wallet-service/Dockerfile
+    container_name: lfg-wallet-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      PORT: "8081"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Market Service
+  market-service:
+    build:
+      context: ./backend
+      dockerfile: market-service/Dockerfile
+    container_name: lfg-market-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
+      PORT: "8082"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8082/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Order Service
+  order-service:
+    build:
+      context: ./backend
+      dockerfile: order-service/Dockerfile
+    container_name: lfg-order-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      PORT: "8085"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8085/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Matching Engine
+  matching-engine:
+    build:
+      context: ./backend
+      dockerfile: matching-engine/Dockerfile
+    container_name: lfg-matching-engine-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      PORT: "8084"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8084/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Credit Exchange Service
+  credit-exchange-service:
+    build:
+      context: ./backend
+      dockerfile: credit-exchange-service/Dockerfile
+    container_name: lfg-credit-exchange-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: "8086"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8086/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./backend
+      dockerfile: notification-service/Dockerfile
+    container_name: lfg-notification-service-prod
+    restart: always
+    environment:
+      PORT: "8087"
+      ENVIRONMENT: production
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8087/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Sportsbook Service
+  sportsbook-service:
+    build:
+      context: ./backend
+      dockerfile: sportsbook-service/Dockerfile
+    container_name: lfg-sportsbook-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: "8088"
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8088/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Crypto Service
+  crypto-service:
+    build:
+      context: ./backend
+      dockerfile: crypto-service/Dockerfile
+    container_name: lfg-crypto-service-prod
+    restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PORT: "8089"
+      ENVIRONMENT: production
+      COINMARKETCAP_API_KEY: ${COINMARKETCAP_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8089/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend
+      dockerfile: api-gateway/Dockerfile
+    container_name: lfg-api-gateway-prod
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://yourdomain.com}
+    depends_on:
+      - user-service
+      - wallet-service
+      - market-service
+      - order-service
+      - matching-engine
+      - credit-exchange-service
+      - notification-service
+      - sportsbook-service
+      - crypto-service
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend-web
+      dockerfile: Dockerfile
+    container_name: lfg-frontend-prod
+    restart: always
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Admin Panel
+  admin-panel:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile
+    container_name: lfg-admin-panel-prod
+    restart: always
+    ports:
+      - "3001:80"
+    environment:
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:8000}
+    depends_on:
+      - api-gateway
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - lfg-network
+
+  # Database Backup Service
+  postgres-backup:
+    image: prodrigestivill/postgres-backup-local:15-alpine
+    container_name: lfg-postgres-backup-prod
+    restart: always
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-lfg_db}
+      POSTGRES_USER: ${POSTGRES_USER:-lfg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lfg-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  lfg-network:
+    driver: bridge

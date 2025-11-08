@@ -67,10 +67,12 @@
 
 - **Docker** >= 24.0
 - **Docker Compose** >= 2.20
+- **Make** (optional, for convenience commands)
+- **kubectl** (optional, for Kubernetes deployment)
 - 8GB RAM minimum
 - 50GB disk space
 
-### Installation
+### Development Installation
 
 ```bash
 # 1. Clone repository
@@ -90,7 +92,10 @@ openssl rand -base64 32
 # 4. Update .env with generated secrets
 nano .env
 
-# 5. Start all services
+# 5. Start all services (using Make)
+make docker-up
+
+# OR manually
 docker-compose up -d
 
 # 6. Wait 30 seconds for services to initialize
@@ -99,6 +104,22 @@ docker-compose up -d
 # Frontend:    http://localhost:3000
 # Admin Panel: http://localhost:3001
 # API Gateway: http://localhost:8000
+```
+
+### Production Installation
+
+```bash
+# 1. Set up production environment
+make dev-setup
+
+# 2. Run database migrations
+make migrate-up
+
+# 3. Start production stack
+make docker-prod
+
+# For complete production deployment guide, see:
+# - PRODUCTION_DEPLOYMENT.md
 ```
 
 ### Verify Installation
@@ -118,8 +139,11 @@ docker-compose logs -f
 
 ## 📚 Documentation
 
-- **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
+- **[PRODUCTION_DEPLOYMENT.md](./PRODUCTION_DEPLOYMENT.md)** - Production deployment guide with Kubernetes
+- **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** - General deployment instructions
 - **[LEGAL_DISCLAIMER.md](./LEGAL_DISCLAIMER.md)** - **REQUIRED READING** - Legal warnings and compliance requirements
+- **[api-docs.yaml](./api-docs.yaml)** - OpenAPI/Swagger API specification
+- **[Makefile](./Makefile)** - Available make commands for development and deployment
 - **[backend/README.md](./backend/README.md)** - Backend architecture and API docs
 - **[frontend-web/README.md](./frontend-web/README.md)** - Frontend setup and features
 - **[admin-panel/README.md](./admin-panel/README.md)** - Admin panel documentation
@@ -253,8 +277,12 @@ npm run build
 
 ### Infrastructure
 - **Containers**: Docker + Docker Compose
+- **Orchestration**: Kubernetes with full manifests
+- **Cache**: Redis 7+ for rate limiting and caching
+- **Monitoring**: Prometheus + Grafana
+- **Database Migrations**: golang-migrate
+- **CI/CD**: GitHub Actions workflows
 - **Reverse Proxy**: nginx (in production)
-- **Orchestration**: Kubernetes-ready
 
 ---
 
@@ -268,7 +296,12 @@ npm run build
 - ✅ Input validation on all endpoints
 - ✅ SQL injection prevention (prepared statements)
 - ✅ CORS configuration
-- ✅ Rate limiting (configurable)
+- ✅ Redis-based rate limiting (10 req/sec per IP)
+- ✅ Request ID tracking for audit trails
+- ✅ Structured logging with zap
+- ✅ Health checks (liveness and readiness)
+- ✅ Graceful shutdown for all services
+- ✅ Automated database backups
 - ✅ Secure headers (HSTS, CSP, X-Frame-Options)
 
 ### Required for Production
@@ -418,18 +451,69 @@ npm run test:e2e
 
 ### Local Development
 ```bash
+make docker-up
+# OR
 docker-compose up -d
 ```
 
 ### Production Deployment
 
-See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for:
-- Cloud deployment (AWS, GCP, Azure)
-- Kubernetes configuration
-- SSL/TLS setup
-- Monitoring and logging
-- Backup and disaster recovery
+#### Using Docker Compose
+```bash
+make docker-prod
+```
+
+#### Using Kubernetes
+```bash
+# Deploy all services
+make k8s-deploy
+
+# Validate manifests
+make k8s-validate
+
+# Check status
+make k8s-status
+```
+
+### Database Management
+```bash
+# Run migrations
+make migrate-up
+
+# Create new migration
+make migrate-create NAME=add_new_table
+
+# Backup database
+make backup
+
+# Restore database
+make restore FILE=./backups/backup.sql.gz
+```
+
+### Common Commands
+```bash
+# See all available commands
+make help
+
+# Run tests
+make test
+
+# Build services
+make build
+
+# View logs
+make docker-logs
+```
+
+See [PRODUCTION_DEPLOYMENT.md](./PRODUCTION_DEPLOYMENT.md) for complete production deployment guide including:
+- Infrastructure setup
+- Kubernetes deployment
+- SSL/TLS configuration
+- Monitoring setup (Prometheus + Grafana)
+- Database migrations
+- Backup and restore procedures
 - Security hardening
+- Troubleshooting
 
 ---
 

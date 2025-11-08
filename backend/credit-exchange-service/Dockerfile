@@ -1,23 +1,28 @@
+# Build stage
 FROM golang:1.21-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates wget
 
 WORKDIR /app
 
-COPY common/ ./common/
-COPY credit-exchange-service/ ./credit-exchange-service/
-
-WORKDIR /app/credit-exchange-service
-
+COPY go.mod go.sum* ./
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o credit-exchange-service ./credit-exchange-service/main.go
+
+# Final stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 
-COPY --from=builder /app/credit-exchange-service/main .
+COPY --from=builder /app/credit-exchange-service .
 
 EXPOSE 8086
 
-CMD ["./main"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:8086/health/live || exit 1
+
+CMD ["./credit-exchange-service"]

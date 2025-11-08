@@ -9,7 +9,7 @@ COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o order-service ./order-service/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api-gateway ./api-gateway/main.go
 
 # Final stage
 FROM alpine:latest
@@ -18,11 +18,11 @@ RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 
-COPY --from=builder /app/order-service .
+COPY --from=builder /app/api-gateway .
 
-EXPOSE 8085
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8085/health/live || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1
 
-CMD ["./order-service"]
+CMD ["./api-gateway"]

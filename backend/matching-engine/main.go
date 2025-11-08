@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
@@ -13,6 +17,8 @@ import (
 )
 
 func main() {
+	log.Println("Starting Matching Engine...")
+
 	if err := database.InitDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
@@ -51,8 +57,36 @@ func main() {
 		port = "8084"
 	}
 
-	log.Printf("Matching engine listening on port %s...", port)
-	if err := http.ListenAndServe(":"+port, corsHandler.Handler(router)); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      corsHandler.Handler(router),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Printf("Matching Engine listening on port %s\n", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }

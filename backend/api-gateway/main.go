@@ -1,13 +1,16 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/middleware"
@@ -16,6 +19,8 @@ import (
 )
 
 func main() {
+	log.Println("Starting API Gateway...")
+
 	// Define the target URLs for the microservices
 	userServiceURL, _ := url.Parse("http://localhost:8080")
 	walletServiceURL, _ := url.Parse("http://localhost:8081")
@@ -74,8 +79,38 @@ func main() {
 		AllowCredentials: true,
 	})
 
-	fmt.Println("API Gateway listening on port 8000...")
-	log.Fatal(http.ListenAndServe(":8000", corsHandler.Handler(mux)))
+	srv := &http.Server{
+		Addr:         ":8000",
+		Handler:      corsHandler.Handler(mux),
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Println("API Gateway listening on port 8000")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }
 
 // applyPublicMiddleware applies rate limiting to public endpoints

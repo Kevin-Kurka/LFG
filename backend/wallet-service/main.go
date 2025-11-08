@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/Kevin-Kurka/LFG/backend/common/auth"
 	"github.com/Kevin-Kurka/LFG/backend/common/database"
@@ -14,6 +18,8 @@ import (
 )
 
 func main() {
+	log.Println("Starting Wallet Service...")
+
 	// Initialize database
 	if err := database.InitDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
@@ -59,13 +65,41 @@ func main() {
 		port = "8081"
 	}
 
-	log.Printf("Wallet service listening on port %s...", port)
-
 	// Combine routers
-	http.Handle("/internal/", http.StripPrefix("/internal", internalRouter))
-	http.Handle("/", corsHandler.Handler(router))
+	mainMux := http.NewServeMux()
+	mainMux.Handle("/internal/", http.StripPrefix("/internal", internalRouter))
+	mainMux.Handle("/", corsHandler.Handler(router))
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mainMux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Start server in a goroutine
+	go func() {
+		log.Printf("Wallet Service listening on port %s\n", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }
