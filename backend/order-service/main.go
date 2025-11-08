@@ -1,40 +1,50 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/Kevin-Kurka/LFG/backend/common/auth"
+	"github.com/Kevin-Kurka/LFG/backend/common/database"
+	"github.com/Kevin-Kurka/LFG/backend/order-service/handlers"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
-	// Placeholder for gRPC client to connect to the Matching Engine
+	if err := database.InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer database.Close()
 
-	// Placeholder for NATS subscriber to listen for TradeExecuted events
-	// for conditional order (Stop, Stop-Limit) activation.
+	router := mux.NewRouter()
+	router.Use(auth.AuthMiddleware)
 
-	// API handlers
-	http.HandleFunc("/orders/place", placeOrderHandler)
-	http.HandleFunc("/orders/cancel", cancelOrderHandler)
-	http.HandleFunc("/orders/status", statusOrderHandler)
+	router.HandleFunc("/orders/place", handlers.PlaceOrder).Methods("POST")
+	router.HandleFunc("/orders/cancel", handlers.CancelOrder).Methods("POST")
+	router.HandleFunc("/orders", handlers.GetOrders).Methods("GET")
+	router.HandleFunc("/orders/{id}", handlers.GetOrder).Methods("GET")
 
-	fmt.Println("Order service listening on port 8082...")
-	log.Fatal(http.ListenAndServe(":8082", nil))
-}
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	}).Methods("GET")
 
-func placeOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Decode and validate the incoming order request.
-	// 2. Check user's wallet for sufficient funds (gRPC call to Wallet Service).
-	// 3. If Market or Limit order, forward to Matching Engine (gRPC call).
-	// 4. If Stop or Stop-Limit order, store it locally and wait for trigger.
-	fmt.Fprintln(w, "Place order endpoint")
-}
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
 
-func cancelOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for cancelling an open order.
-	fmt.Fprintln(w, "Cancel order endpoint")
-}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8085"
+	}
 
-func statusOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for retrieving the status of an order.
-	fmt.Fprintln(w, "Order status endpoint")
+	log.Printf("Order service listening on port %s...", port)
+	if err := http.ListenAndServe(":"+port, corsHandler.Handler(router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

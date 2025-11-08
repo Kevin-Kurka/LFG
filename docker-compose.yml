@@ -1,0 +1,166 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: lfg-postgres
+    environment:
+      POSTGRES_DB: lfg
+      POSTGRES_USER: lfguser
+      POSTGRES_PASSWORD: lfgpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lfguser -d lfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: lfg-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8080
+      - WALLET_SERVICE_URL=http://wallet-service:8081
+      - ORDER_SERVICE_URL=http://order-service:8082
+      - MARKET_SERVICE_URL=http://market-service:8083
+      - CREDIT_EXCHANGE_URL=http://credit-exchange-service:8084
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8085
+      - SPORTSBOOK_SERVICE_URL=http://sportsbook-service:8086
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - user-service
+      - wallet-service
+      - order-service
+      - market-service
+      - credit-exchange-service
+      - notification-service
+      - sportsbook-service
+
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    container_name: lfg-user-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  wallet-service:
+    build:
+      context: ./backend/wallet-service
+      dockerfile: Dockerfile
+    container_name: lfg-wallet-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  order-service:
+    build:
+      context: ./backend/order-service
+      dockerfile: Dockerfile
+    container_name: lfg-order-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+      - MATCHING_ENGINE_URL=http://matching-engine:9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      - matching-engine
+
+  market-service:
+    build:
+      context: ./backend/market-service
+      dockerfile: Dockerfile
+    container_name: lfg-market-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  credit-exchange-service:
+    build:
+      context: ./backend/credit-exchange-service
+      dockerfile: Dockerfile
+    container_name: lfg-credit-exchange-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./backend/notification-service
+      dockerfile: Dockerfile
+    container_name: lfg-notification-service
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  sportsbook-service:
+    build:
+      context: ./backend/sportsbook-service
+      dockerfile: Dockerfile
+    container_name: lfg-sportsbook-service
+    ports:
+      - "8086:8086"
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  matching-engine:
+    build:
+      context: ./backend/matching-engine
+      dockerfile: Dockerfile
+    container_name: lfg-matching-engine
+    ports:
+      - "9000:9000"
+    environment:
+      - DATABASE_URL=postgresql://lfguser:lfgpassword@postgres:5432/lfg?sslmode=disable
+
+  frontend:
+    build:
+      context: ./frontend-web
+      dockerfile: Dockerfile
+    container_name: lfg-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - api-gateway
+
+  admin-panel:
+    build:
+      context: ./admin-panel
+      dockerfile: Dockerfile
+    container_name: lfg-admin-panel
+    ports:
+      - "3001:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - api-gateway
+
+volumes:
+  postgres_data:

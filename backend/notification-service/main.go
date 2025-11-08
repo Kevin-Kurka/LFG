@@ -1,44 +1,41 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
-	// "github.com/gorilla/websocket"
-	// "github.com/nats-io/nats.go"
+	"os"
+
+	"github.com/Kevin-Kurka/LFG/backend/notification-service/handlers"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
-// Placeholder for the WebSocket upgrader
-// var upgrader = websocket.Upgrader{
-// 	CheckOrigin: func(r *http.Request) bool {
-// 		return true // Allow all connections for now
-// 	},
-// }
-
 func main() {
-	// 1. Placeholder for NATS Connection
-	// Connect to NATS and subscribe to topics like "trades.executed" and "orders.updated".
-	// When a message is received, it will be forwarded to the relevant WebSocket clients.
-	fmt.Println("Placeholder for NATS subscriber setup.")
+	// Start WebSocket hub
+	go handlers.GlobalHub.Run()
 
-	// 2. Setup WebSocket handler
-	http.HandleFunc("/ws", handleWebSocket)
+	router := mux.NewRouter()
+	router.HandleFunc("/ws", handlers.HandleWebSocket)
 
-	// 3. Start the server
-	fmt.Println("Notification service (WebSocket) listening on port 8085...")
-	log.Fatal(http.ListenAndServe(":8085", nil))
-}
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	}).Methods("GET")
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// This is where the HTTP connection is upgraded to a WebSocket connection.
-	// conn, err := upgrader.Upgrade(w, r, nil)
-	// if err != nil {
-	// 	log.Println("Failed to upgrade connection:", err)
-	// 	return
-	// }
-	// defer conn.Close()
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
 
-	// Logic for managing client connections, subscriptions to specific market data,
-	// and pushing messages received from NATS to the client.
-	fmt.Fprintln(w, "WebSocket connection endpoint")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8087"
+	}
+
+	log.Printf("Notification service (WebSocket) listening on port %s...", port)
+	if err := http.ListenAndServe(":"+port, corsHandler.Handler(router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

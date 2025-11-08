@@ -1,40 +1,89 @@
 package engine
 
 import (
+	"context"
+	"log"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
-// MatchingEngine manages the order books for all markets.
-type MatchingEngine struct {
-	OrderBooks map[string]*OrderBook // Map of market ticker to OrderBook
+// Engine manages multiple order books (one per contract)
+type Engine struct {
+	orderBooks map[uuid.UUID]*OrderBook
 	mu         sync.RWMutex
-	// NATS connection would go here
 }
 
-// NewMatchingEngine creates a new MatchingEngine.
-func NewMatchingEngine() *MatchingEngine {
-	return &MatchingEngine{
-		OrderBooks: make(map[string]*OrderBook),
+// NewEngine creates a new matching engine
+func NewEngine() *Engine {
+	return &Engine{
+		orderBooks: make(map[uuid.UUID]*OrderBook),
 	}
 }
 
-// GetOrCreateOrderBook retrieves an existing order book for a market or creates a new one.
-func (me *MatchingEngine) GetOrCreateOrderBook(marketTicker string) *OrderBook {
-	me.mu.Lock()
-	defer me.mu.Unlock()
+// GetOrCreateOrderBook returns an existing order book or creates a new one
+func (e *Engine) GetOrCreateOrderBook(contractID uuid.UUID) *OrderBook {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
-	if ob, ok := me.OrderBooks[marketTicker]; ok {
+	if ob, exists := e.orderBooks[contractID]; exists {
 		return ob
 	}
 
-	newOB := NewOrderBook()
-	me.OrderBooks[marketTicker] = newOB
-	return newOB
+	ob := NewOrderBook(contractID)
+	e.orderBooks[contractID] = ob
+	log.Printf("Created new order book for contract %s", contractID)
+	return ob
 }
 
-// ProcessOrder is the main entry point for processing an order.
-func (me *MatchingEngine) ProcessOrder(marketTicker string, order *Order) {
-	orderBook := me.GetOrCreateOrderBook(marketTicker)
-	orderBook.AddOrder(order)
-	// Further logic will be more complex, involving publishing events.
+// SubmitOrder submits an order to the matching engine
+func (e *Engine) SubmitOrder(order *Order) ([]Trade, error) {
+	ob := e.GetOrCreateOrderBook(order.ContractID)
+	trades := ob.AddOrder(order)
+
+	// Persist trades to database
+	if len(trades) > 0 {
+		ctx := context.Background()
+		if err := ob.PersistTrades(ctx, trades); err != nil {
+			log.Printf("Failed to persist trades: %v", err)
+			return trades, err
+		}
+	}
+
+	return trades, nil
+}
+
+// CancelOrder cancels an order
+func (e *Engine) CancelOrder(contractID, orderID uuid.UUID) bool {
+	e.mu.RLock()
+	ob, exists := e.orderBooks[contractID]
+	e.mu.RUnlock()
+
+	if !exists {
+		return false
+	}
+
+	return ob.CancelOrder(orderID)
+}
+
+// GetOrderBook returns a snapshot of the order book for a contract
+func (e *Engine) GetOrderBook(contractID uuid.UUID) ([]Order, []Order, bool) {
+	e.mu.RLock()
+	ob, exists := e.orderBooks[contractID]
+	e.mu.RUnlock()
+
+	if !exists {
+		return nil, nil, false
+	}
+
+	bids, asks := ob.GetSnapshot()
+	return bids, asks, true
+}
+
+// Global engine instance
+var GlobalEngine *Engine
+
+func init() {
+	GlobalEngine = NewEngine()
+	log.Println("Matching engine initialized")
 }

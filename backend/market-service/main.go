@@ -1,32 +1,51 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/Kevin-Kurka/LFG/backend/common/database"
+	"github.com/Kevin-Kurka/LFG/backend/market-service/handlers"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
-	// API handlers
-	http.HandleFunc("/markets", listMarketsHandler)
-	http.HandleFunc("/markets/detail", marketDetailHandler)
-	http.HandleFunc("/markets/orderbook", orderbookHandler)
+	if err := database.InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer database.Close()
 
-	fmt.Println("Market service listening on port 8083...")
-	log.Fatal(http.ListenAndServe(":8083", nil))
-}
+	router := mux.NewRouter()
 
-func listMarketsHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for listing all available markets, with filtering.
-	fmt.Fprintln(w, "List markets endpoint")
-}
+	// Market routes
+	router.HandleFunc("/markets", handlers.ListMarkets).Methods("GET")
+	router.HandleFunc("/markets", handlers.CreateMarket).Methods("POST")
+	router.HandleFunc("/markets/{id}", handlers.GetMarket).Methods("GET")
+	router.HandleFunc("/markets/{id}", handlers.UpdateMarket).Methods("PUT")
+	router.HandleFunc("/markets/{id}/resolve", handlers.ResolveMarket).Methods("POST")
+	router.HandleFunc("/markets/{id}/orderbook", handlers.GetOrderBook).Methods("GET")
 
-func marketDetailHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for retrieving the detailed information for a single market.
-	fmt.Fprintln(w, "Market detail endpoint")
-}
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	}).Methods("GET")
 
-func orderbookHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for retrieving the current order book for a market.
-	fmt.Fprintln(w, "Market order book endpoint")
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8082"
+	}
+
+	log.Printf("Market service listening on port %s...", port)
+	if err := http.ListenAndServe(":"+port, corsHandler.Handler(router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }

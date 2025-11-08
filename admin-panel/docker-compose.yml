@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  admin-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:80"
+    environment:
+      - REACT_APP_API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
+    restart: unless-stopped
+    networks:
+      - lfg-network
+
+networks:
+  lfg-network:
+    external: true

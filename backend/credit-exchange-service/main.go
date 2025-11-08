@@ -1,33 +1,43 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
+	"os"
+
+	"github.com/Kevin-Kurka/LFG/backend/common/auth"
+	"github.com/Kevin-Kurka/LFG/backend/credit-exchange-service/handlers"
+	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
-	// API handlers
-	http.HandleFunc("/exchange/buy", buyCreditsHandler)
-	http.HandleFunc("/exchange/sell", sellCreditsHandler)
-	http.HandleFunc("/exchange/history", exchangeHistoryHandler)
+	router := mux.NewRouter()
+	router.Use(auth.AuthMiddleware)
 
-	fmt.Println("Credit Exchange service listening on port 8084...")
-	log.Fatal(http.ListenAndServe(":8084", nil))
-}
+	router.HandleFunc("/exchange/buy", handlers.BuyCredits).Methods("POST")
+	router.HandleFunc("/exchange/sell", handlers.SellCredits).Methods("POST")
+	router.HandleFunc("/exchange/history", handlers.GetHistory).Methods("GET")
 
-func buyCreditsHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for purchasing credits with cryptocurrency.
-	// This will integrate with a mock/demo crypto payment gateway.
-	fmt.Fprintln(w, "Buy credits endpoint")
-}
+	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy"}`))
+	}).Methods("GET")
 
-func sellCreditsHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for selling credits for cryptocurrency.
-	fmt.Fprintln(w, "Sell credits endpoint")
-}
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: true,
+	})
 
-func exchangeHistoryHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for retrieving the user's credit exchange history.
-	fmt.Fprintln(w, "Exchange history endpoint")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8086"
+	}
+
+	log.Printf("Credit Exchange service listening on port %s...", port)
+	if err := http.ListenAndServe(":"+port, corsHandler.Handler(router)); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
