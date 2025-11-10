@@ -6,8 +6,9 @@ import { orderService } from '../services/order.service';
 import { sportsbookService } from '../services/sportsbook.service';
 import { WalletBalance, Order, Bet } from '../types';
 import { formatCurrency, formatTimeAgo } from '../utils/format';
-import { LoadingSpinner } from '../components/LoadingSpinner';
 import { ErrorMessage } from '../components/ErrorMessage';
+import SkeletonStats from '../components/SkeletonStats';
+import SkeletonCard from '../components/SkeletonCard';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -40,10 +41,6 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return <LoadingSpinner size="lg" text="Loading dashboard..." />;
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-dark-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -58,7 +55,17 @@ export const Dashboard: React.FC = () => {
 
         {error && <ErrorMessage message={error} onRetry={loadDashboardData} />}
 
-        <div className="grid md:grid-cols-3 gap-6 mb-8">
+        {loading ? (
+          <>
+            <SkeletonStats count={3} className="mb-8" />
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
+              <SkeletonCard />
+              <SkeletonCard />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white dark:bg-dark-800 rounded-lg shadow-lg p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400">
@@ -246,6 +253,8 @@ export const Dashboard: React.FC = () => {
             <p className="text-purple-100">Connect your sportsbook accounts</p>
           </Link>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

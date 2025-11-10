@@ -7,6 +7,8 @@ import { OddsFormatProvider } from './context/OddsFormatContext';
 import { Navbar } from './components/Navbar';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { LiveUpdates } from './components/LiveUpdates';
+import ErrorBoundary from './components/ErrorBoundary';
+import { ToastProvider } from './components/ToastContainer';
 
 import { Home } from './pages/Home';
 import { Login } from './pages/Login';
@@ -35,14 +37,16 @@ const queryClient = new QueryClient({
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <ThemeProvider>
-          <OddsFormatProvider>
-            <AuthProvider>
-              <div className="min-h-screen bg-gray-50 dark:bg-dark-900">
-                <Navbar />
-                <Routes>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ThemeProvider>
+            <OddsFormatProvider>
+              <ToastProvider>
+                <AuthProvider>
+                  <div className="min-h-screen bg-gray-50 dark:bg-dark-900">
+                    <Navbar />
+                    <Routes>
                   <Route path="/" element={<Home />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/register" element={<Register />} />
@@ -146,15 +150,17 @@ function App() {
                     }
                   />
 
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-                <LiveUpdates />
-              </div>
-            </AuthProvider>
-          </OddsFormatProvider>
-        </ThemeProvider>
-      </BrowserRouter>
-    </QueryClientProvider>
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                    <LiveUpdates />
+                  </div>
+                </AuthProvider>
+              </ToastProvider>
+            </OddsFormatProvider>
+          </ThemeProvider>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
