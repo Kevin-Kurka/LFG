@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { handleApiError } from '../services/api';
 import { ErrorMessage } from '../components/ErrorMessage';
 import Button from '../components/Button';
+import SuccessCheckmark from '../components/SuccessCheckmark';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -13,6 +14,8 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [emailValid, setEmailValid] = useState(false);
+  const [passwordValid, setPasswordValid] = useState(false);
   const [shake, setShake] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -20,26 +23,32 @@ export const Login: React.FC = () => {
   const validateEmail = (value: string) => {
     if (!value) {
       setEmailError('Email is required');
+      setEmailValid(false);
       return false;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
       setEmailError('Please enter a valid email address');
+      setEmailValid(false);
       return false;
     }
     setEmailError('');
+    setEmailValid(true);
     return true;
   };
 
   const validatePassword = (value: string) => {
     if (!value) {
       setPasswordError('Password is required');
+      setPasswordValid(false);
       return false;
     }
     if (value.length < 8) {
       setPasswordError('Password must be at least 8 characters');
+      setPasswordValid(false);
       return false;
     }
     setPasswordError('');
+    setPasswordValid(true);
     return true;
   };
 
@@ -94,28 +103,37 @@ export const Login: React.FC = () => {
               >
                 Email Address
               </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (emailError) validateEmail(e.target.value);
-                }}
-                onBlur={(e) => validateEmail(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg bg-white dark:bg-dark-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors ${
-                  emailError
-                    ? 'border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 dark:border-dark-600 focus:ring-primary-500'
-                } focus:ring-2 focus:border-transparent`}
-                placeholder="you@example.com"
-                aria-label="Email address"
-                aria-describedby={emailError ? 'email-error' : undefined}
-                aria-invalid={!!emailError}
-              />
+              <div className="relative">
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (emailError || emailValid) validateEmail(e.target.value);
+                  }}
+                  onBlur={(e) => validateEmail(e.target.value)}
+                  className={`w-full px-4 py-3 ${emailValid ? 'pr-12' : ''} border rounded-lg bg-white dark:bg-dark-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors ${
+                    emailError
+                      ? 'border-red-500 focus:ring-red-500'
+                      : emailValid
+                      ? 'border-green-500 focus:ring-green-500'
+                      : 'border-gray-300 dark:border-dark-600 focus:ring-primary-500'
+                  } focus:ring-2 focus:border-transparent`}
+                  placeholder="you@example.com"
+                  aria-label="Email address"
+                  aria-describedby={emailError ? 'email-error' : undefined}
+                  aria-invalid={!!emailError}
+                />
+                {emailValid && !emailError && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <SuccessCheckmark />
+                  </div>
+                )}
+              </div>
               {emailError && (
                 <p id="email-error" className="mt-1 text-sm text-red-600 dark:text-red-400" role="alert">
                   {emailError}
@@ -140,12 +158,14 @@ export const Login: React.FC = () => {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    if (passwordError) validatePassword(e.target.value);
+                    if (passwordError || passwordValid) validatePassword(e.target.value);
                   }}
                   onBlur={(e) => validatePassword(e.target.value)}
-                  className={`w-full px-4 py-3 pr-12 border rounded-lg bg-white dark:bg-dark-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors ${
+                  className={`w-full px-4 py-3 ${passwordValid ? 'pr-20' : 'pr-12'} border rounded-lg bg-white dark:bg-dark-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 transition-colors ${
                     passwordError
                       ? 'border-red-500 focus:ring-red-500'
+                      : passwordValid
+                      ? 'border-green-500 focus:ring-green-500'
                       : 'border-gray-300 dark:border-dark-600 focus:ring-primary-500'
                   } focus:ring-2 focus:border-transparent`}
                   placeholder="••••••••"
@@ -153,6 +173,11 @@ export const Login: React.FC = () => {
                   aria-describedby={passwordError ? 'password-error' : undefined}
                   aria-invalid={!!passwordError}
                 />
+                {passwordValid && !passwordError && (
+                  <div className="absolute right-12 top-1/2 -translate-y-1/2">
+                    <SuccessCheckmark />
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
