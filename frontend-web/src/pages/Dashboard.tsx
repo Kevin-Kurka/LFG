@@ -9,6 +9,7 @@ import { formatCurrency, formatTimeAgo } from '../utils/format';
 import { ErrorMessage } from '../components/ErrorMessage';
 import SkeletonStats from '../components/SkeletonStats';
 import SkeletonCard from '../components/SkeletonCard';
+import CountUp from '../components/CountUp';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
@@ -81,7 +82,17 @@ export const Dashboard: React.FC = () => {
               </svg>
             </div>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              {balance ? formatCurrency(balance.balance) : '$0.00'}
+              {balance ? (
+                <CountUp
+                  end={balance.balance}
+                  decimals={2}
+                  prefix="$"
+                  separator=","
+                  duration={1500}
+                />
+              ) : (
+                '$0.00'
+              )}
             </p>
             <Link
               to="/wallet"
@@ -106,7 +117,10 @@ export const Dashboard: React.FC = () => {
               </svg>
             </div>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              {recentOrders.filter((o) => o.status === 'open').length}
+              <CountUp
+                end={recentOrders.filter((o) => o.status === 'open').length}
+                duration={1500}
+              />
             </p>
             <Link
               to="/markets"
@@ -130,7 +144,10 @@ export const Dashboard: React.FC = () => {
               </svg>
             </div>
             <p className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              {recentBets.filter((b) => b.status === 'pending').length}
+              <CountUp
+                end={recentBets.filter((b) => b.status === 'pending').length}
+                duration={1500}
+              />
             </p>
             <Link
               to="/bets"
