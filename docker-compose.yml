@@ -1,0 +1,263 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: lfg-postgres
+    environment:
+      POSTGRES_DB: lfg
+      POSTGRES_USER: lfg
+      POSTGRES_PASSWORD: lfg_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # NATS Message Queue
+  nats:
+    image: nats:2.10-alpine
+    container_name: lfg-nats
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+      - "6222:6222"  # Cluster connections
+    command: ["-js", "-m", "8222"]  # Enable JetStream and monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: lfg-api-gateway
+    environment:
+      - PORT=8000
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - USER_SERVICE_URL=http://user-service:8080
+      - WALLET_SERVICE_URL=http://wallet-service:8081
+      - ORDER_SERVICE_URL=http://order-service:8082
+      - MARKET_SERVICE_URL=http://market-service:8083
+      - CREDIT_EXCHANGE_URL=http://credit-exchange:8084
+      - NOTIFICATION_SERVICE_URL=http://notification-service:8085
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # User Service
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    container_name: lfg-user-service
+    environment:
+      - PORT=8080
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=lfg
+      - DB_PASSWORD=lfg_dev_password
+      - DB_NAME=lfg
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-change-in-production}
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Wallet Service
+  wallet-service:
+    build:
+      context: ./backend/wallet-service
+      dockerfile: Dockerfile
+    container_name: lfg-wallet-service
+    environment:
+      - PORT=8081
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=lfg
+      - DB_PASSWORD=lfg_dev_password
+      - DB_NAME=lfg
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Order Service
+  order-service:
+    build:
+      context: ./backend/order-service
+      dockerfile: Dockerfile
+    container_name: lfg-order-service
+    environment:
+      - PORT=8082
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=lfg
+      - DB_PASSWORD=lfg_dev_password
+      - DB_NAME=lfg
+      - NATS_URL=nats://nats:4222
+      - MATCHING_ENGINE_GRPC=matching-engine:50051
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Market Service
+  market-service:
+    build:
+      context: ./backend/market-service
+      dockerfile: Dockerfile
+    container_name: lfg-market-service
+    environment:
+      - PORT=8083
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=lfg
+      - DB_PASSWORD=lfg_dev_password
+      - DB_NAME=lfg
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Credit Exchange Service
+  credit-exchange:
+    build:
+      context: ./backend/credit-exchange-service
+      dockerfile: Dockerfile
+    container_name: lfg-credit-exchange
+    environment:
+      - PORT=8084
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=lfg
+      - DB_PASSWORD=lfg_dev_password
+      - DB_NAME=lfg
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Notification Service (WebSocket)
+  notification-service:
+    build:
+      context: ./backend/notification-service
+      dockerfile: Dockerfile
+    container_name: lfg-notification-service
+    environment:
+      - PORT=8085
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "8085:8085"
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lfg-network
+
+  # Matching Engine
+  matching-engine:
+    build:
+      context: ./backend/matching-engine
+      dockerfile: Dockerfile
+    container_name: lfg-matching-engine
+    environment:
+      - GRPC_PORT=50051
+      - NATS_URL=nats://nats:4222
+    ports:
+      - "50051:50051"
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - lfg-network
+
+networks:
+  lfg-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

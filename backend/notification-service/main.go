@@ -1,44 +1,70 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
-	// "github.com/gorilla/websocket"
-	// "github.com/nats-io/nats.go"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"lfg/notification-service/handlers"
 )
 
-// Placeholder for the WebSocket upgrader
-// var upgrader = websocket.Upgrader{
-// 	CheckOrigin: func(r *http.Request) bool {
-// 		return true // Allow all connections for now
-// 	},
-// }
-
 func main() {
-	// 1. Placeholder for NATS Connection
-	// Connect to NATS and subscribe to topics like "trades.executed" and "orders.updated".
-	// When a message is received, it will be forwarded to the relevant WebSocket clients.
-	fmt.Println("Placeholder for NATS subscriber setup.")
+	// Initialize WebSocket hub
+	hub := handlers.NewHub()
+	log.Println("WebSocket hub initialized")
 
-	// 2. Setup WebSocket handler
-	http.HandleFunc("/ws", handleWebSocket)
+	// Start hub in background
+	go hub.Run()
+	log.Println("WebSocket hub running")
 
-	// 3. Start the server
-	fmt.Println("Notification service (WebSocket) listening on port 8085...")
-	log.Fatal(http.ListenAndServe(":8085", nil))
-}
+	// TODO: Connect to NATS and subscribe to trade/order events
+	// When events are received, broadcast to relevant clients via hub.BroadcastToUser()
 
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	// This is where the HTTP connection is upgraded to a WebSocket connection.
-	// conn, err := upgrader.Upgrade(w, r, nil)
-	// if err != nil {
-	// 	log.Println("Failed to upgrade connection:", err)
-	// 	return
-	// }
-	// defer conn.Close()
+	// Setup HTTP routes
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handlers.Health)
+	mux.HandleFunc("/ws", handlers.HandleWebSocket(hub))
 
-	// Logic for managing client connections, subscriptions to specific market data,
-	// and pushing messages received from NATS to the client.
-	fmt.Fprintln(w, "WebSocket connection endpoint")
+	// Create HTTP server
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8085"
+	}
+
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server
+	go func() {
+		log.Printf("Notification service (WebSocket) listening on port %s...\n", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for interrupt
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	fmt.Println("Server exited")
 }

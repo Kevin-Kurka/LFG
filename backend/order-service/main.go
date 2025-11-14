@@ -1,40 +1,96 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"lfg/shared/config"
+	"lfg/shared/db"
+	"lfg/order-service/handlers"
+	"lfg/order-service/repository"
 )
 
 func main() {
-	// Placeholder for gRPC client to connect to the Matching Engine
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load config: %v", err)
+	}
 
-	// Placeholder for NATS subscriber to listen for TradeExecuted events
-	// for conditional order (Stop, Stop-Limit) activation.
+	// Create context
+	ctx := context.Background()
 
-	// API handlers
-	http.HandleFunc("/orders/place", placeOrderHandler)
-	http.HandleFunc("/orders/cancel", cancelOrderHandler)
-	http.HandleFunc("/orders/status", statusOrderHandler)
+	// Initialize database connection
+	dbCfg := db.Config{
+		Host:            cfg.DBHost,
+		Port:            cfg.DBPort,
+		User:            cfg.DBUser,
+		Password:        cfg.DBPassword,
+		Database:        cfg.DBName,
+		SSLMode:         cfg.DBSSLMode,
+		MaxConns:        cfg.DBMaxConns,
+		MinConns:        cfg.DBMinConns,
+		MaxConnLifetime: 1 * time.Hour,
+		MaxConnIdleTime: 30 * time.Minute,
+	}
 
-	fmt.Println("Order service listening on port 8082...")
-	log.Fatal(http.ListenAndServe(":8082", nil))
-}
+	pool, err := db.NewPool(ctx, dbCfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer db.Close(pool)
 
-func placeOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Decode and validate the incoming order request.
-	// 2. Check user's wallet for sufficient funds (gRPC call to Wallet Service).
-	// 3. If Market or Limit order, forward to Matching Engine (gRPC call).
-	// 4. If Stop or Stop-Limit order, store it locally and wait for trigger.
-	fmt.Fprintln(w, "Place order endpoint")
-}
+	log.Println("Connected to database successfully")
 
-func cancelOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for cancelling an open order.
-	fmt.Fprintln(w, "Cancel order endpoint")
-}
+	// Initialize repository
+	orderRepo := repository.NewOrderRepository(pool)
 
-func statusOrderHandler(w http.ResponseWriter, r *http.Request) {
-	// Logic for retrieving the status of an order.
-	fmt.Fprintln(w, "Order status endpoint")
+	// Initialize handlers
+	orderHandler := handlers.NewOrderHandler(orderRepo, cfg.MatchingEngineGRPC)
+
+	// Setup HTTP routes
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", handlers.Health)
+	mux.HandleFunc("/orders/place", orderHandler.PlaceOrder)
+	mux.HandleFunc("/orders/cancel", orderHandler.CancelOrder)
+	mux.HandleFunc("/orders/status", orderHandler.GetOrderStatus)
+
+	// Create HTTP server
+	server := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server
+	go func() {
+		log.Printf("Order service listening on port %s...\n", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for interrupt
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server...")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	fmt.Println("Server exited")
 }

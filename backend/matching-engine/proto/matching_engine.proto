@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package matching;
+
+option go_package = "lfg/matching-engine/proto";
+
+// MatchingEngine service handles order matching
+service MatchingEngine {
+  // PlaceOrder submits a new order to the matching engine
+  rpc PlaceOrder(PlaceOrderRequest) returns (PlaceOrderResponse);
+
+  // CancelOrder cancels an active order
+  rpc CancelOrder(CancelOrderRequest) returns (CancelOrderResponse);
+
+  // GetOrderBook retrieves the current order book for a contract
+  rpc GetOrderBook(GetOrderBookRequest) returns (GetOrderBookResponse);
+}
+
+// Order types
+enum OrderType {
+  MARKET = 0;
+  LIMIT = 1;
+}
+
+// Order side
+enum OrderSide {
+  BUY = 0;
+  SELL = 1;
+}
+
+// PlaceOrderRequest contains order details
+message PlaceOrderRequest {
+  string order_id = 1;
+  string user_id = 2;
+  string contract_id = 3;
+  OrderType type = 4;
+  OrderSide side = 5;
+  int32 quantity = 6;
+  double limit_price = 7; // Optional, only for LIMIT orders
+}
+
+// PlaceOrderResponse contains the result of order placement
+message PlaceOrderResponse {
+  string order_id = 1;
+  string status = 2; // "ACTIVE", "FILLED", "PARTIALLY_FILLED"
+  int32 quantity_filled = 3;
+  double average_price = 4;
+  repeated Trade trades = 5;
+}
+
+// Trade represents a matched trade
+message Trade {
+  string trade_id = 1;
+  string maker_order_id = 2;
+  string taker_order_id = 3;
+  int32 quantity = 4;
+  double price = 5;
+  int64 executed_at = 6; // Unix timestamp
+}
+
+// CancelOrderRequest contains order cancellation details
+message CancelOrderRequest {
+  string order_id = 1;
+  string contract_id = 2;
+}
+
+// CancelOrderResponse contains the result of cancellation
+message CancelOrderResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// GetOrderBookRequest requests the order book for a contract
+message GetOrderBookRequest {
+  string contract_id = 1;
+  int32 depth = 2; // Number of price levels to return
+}
+
+// GetOrderBookResponse contains the order book
+message GetOrderBookResponse {
+  repeated OrderBookLevel bids = 1;
+  repeated OrderBookLevel asks = 2;
+}
+
+// OrderBookLevel represents aggregated orders at a price level
+message OrderBookLevel {
+  double price = 1;
+  int32 quantity = 2;
+  int32 order_count = 3;
+}
