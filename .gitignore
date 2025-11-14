@@ -1,0 +1,102 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+vendor/
+*.log
+
+# Go build artifacts
+bin/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node.js (Admin Panel)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+package-lock.json
+yarn.lock
+
+# React build
+frontend/admin-panel/build/
+frontend/admin-panel/dist/
+
+# Flutter (Mobile App)
+frontend/mobile-app/.dart_tool/
+frontend/mobile-app/.flutter-plugins
+frontend/mobile-app/.flutter-plugins-dependencies
+frontend/mobile-app/.packages
+frontend/mobile-app/.pub-cache/
+frontend/mobile-app/.pub/
+frontend/mobile-app/build/
+frontend/mobile-app/ios/Flutter/Flutter.framework
+frontend/mobile-app/ios/Flutter/Flutter.podspec
+frontend/mobile-app/ios/Pods/
+frontend/mobile-app/ios/.symlinks/
+frontend/mobile-app/android/.gradle/
+frontend/mobile-app/android/captures/
+frontend/mobile-app/android/local.properties
+frontend/mobile-app/android/app/debug/
+frontend/mobile-app/android/app/profile/
+frontend/mobile-app/android/app/release/
+
+# Docker
+*.pid
+*.seed
+*.pid.lock
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# Testing
+coverage/
+*.cover
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*~.nib
