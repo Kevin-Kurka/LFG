@@ -1,0 +1,85 @@
+name: Lint
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  golangci-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/shared
+          args: --timeout=5m
+
+      - name: Lint user-service
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/user-service
+          args: --timeout=5m
+
+      - name: Lint wallet-service
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/wallet-service
+          args: --timeout=5m
+
+      - name: Lint order-service
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/order-service
+          args: --timeout=5m
+
+      - name: Lint market-service
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/market-service
+          args: --timeout=5m
+
+      - name: Lint matching-engine
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: backend/matching-engine
+          args: --timeout=5m
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Run Gosec Security Scanner
+        uses: securego/gosec@master
+        with:
+          args: '-no-fail -fmt sarif -out gosec-results.sarif ./...'
+
+      - name: Upload SARIF file
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec-results.sarif
