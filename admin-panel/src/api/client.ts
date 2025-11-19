@@ -84,14 +84,14 @@ class ApiClient {
 
   // Auth endpoints
   async login(email: string, password: string) {
-    return this.post<{ token: string; user: any }>('/api/v1/auth/login', {
+    return this.post<{ token: string; user: any }>('/login', {
       email,
       password,
     });
   }
 
   async register(email: string, password: string, username: string) {
-    return this.post<{ token: string; user: any }>('/api/v1/auth/register', {
+    return this.post<{ token: string; user: any }>('/register', {
       email,
       password,
       username,
@@ -101,33 +101,33 @@ class ApiClient {
   // Market endpoints
   async getMarkets(page: number = 1, limit: number = 20) {
     return this.get<{ markets: any[]; total: number; page: number }>(
-      `/api/v1/markets?page=${page}&limit=${limit}`
+      `/markets?page=${page}&limit=${limit}`
     );
   }
 
   async getMarket(id: string) {
-    return this.get<any>(`/api/v1/markets/${id}`);
+    return this.get<any>(`/markets/${id}`);
   }
 
   async createMarket(market: any) {
-    return this.post<any>('/api/v1/markets', market);
+    return this.post<any>('/markets', market);
   }
 
   // User endpoints
   async getUsers(page: number = 1, limit: number = 20) {
     return this.get<{ users: any[]; total: number }>(
-      `/api/v1/users?page=${page}&limit=${limit}`
+      `/users?page=${page}&limit=${limit}`
     );
   }
 
   async getUser(id: string) {
-    return this.get<any>(`/api/v1/users/${id}`);
+    return this.get<any>(`/users/${id}`);
   }
 
   // Wallet endpoints
   async getWallet(userId: string) {
     return this.get<{ balance: number; currency: string }>(
-      `/api/v1/wallets/${userId}`
+      `/balance`
     );
   }
 
@@ -137,7 +137,7 @@ class ApiClient {
     if (userId) params.append('user_id', userId);
     if (contractId) params.append('contract_id', contractId);
     return this.get<{ orders: any[] }>(
-      `/api/v1/orders${params.toString() ? '?' + params.toString() : ''}`
+      `/orders${params.toString() ? '?' + params.toString() : ''}`
     );
   }
 }
