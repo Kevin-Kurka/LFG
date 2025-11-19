@@ -52,7 +52,7 @@ func main() {
 	marketRepo := repository.NewMarketRepository(pool)
 
 	// Initialize handlers
-	marketHandler := handlers.NewMarketHandler(marketRepo)
+	marketHandler := handlers.NewMarketHandler(marketRepo, cfg.MatchingEngineGRPC)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

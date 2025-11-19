@@ -52,7 +52,7 @@ func main() {
 	txRepo := repository.NewCreditTransactionRepository(pool)
 
 	// Initialize handlers
-	exchangeHandler := handlers.NewExchangeHandler(txRepo)
+	exchangeHandler := handlers.NewExchangeHandler(txRepo, cfg.WalletServiceURL)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

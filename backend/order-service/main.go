@@ -52,7 +52,7 @@ func main() {
 	orderRepo := repository.NewOrderRepository(pool)
 
 	// Initialize handlers
-	orderHandler := handlers.NewOrderHandler(orderRepo, cfg.MatchingEngineGRPC)
+	orderHandler := handlers.NewOrderHandler(orderRepo, cfg.MatchingEngineGRPC, cfg.WalletServiceURL)
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

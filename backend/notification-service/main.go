@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"lfg/notification-service/handlers"
 )
 
@@ -22,8 +24,64 @@ func main() {
 	go hub.Run()
 	log.Println("WebSocket hub running")
 
-	// TODO: Connect to NATS and subscribe to trade/order events
-	// When events are received, broadcast to relevant clients via hub.BroadcastToUser()
+	// Connect to NATS and subscribe to trade events
+	natsURL := os.Getenv("NATS_URL")
+	if natsURL == "" {
+		natsURL = "nats://localhost:4222"
+	}
+
+	natsConn, err := nats.Connect(natsURL)
+	if err != nil {
+		log.Printf("Warning: Failed to connect to NATS: %v", err)
+		log.Println("Continuing without NATS (trade notifications will not work)")
+	} else {
+		log.Printf("Connected to NATS at %s", natsURL)
+		defer natsConn.Close()
+
+		// Subscribe to trades topic
+		_, err := natsConn.Subscribe("trades", func(msg *nats.Msg) {
+			var tradeEvent map[string]interface{}
+			if err := json.Unmarshal(msg.Data, &tradeEvent); err != nil {
+				log.Printf("Failed to unmarshal trade event: %v", err)
+				return
+			}
+
+			log.Printf("Received trade event: %v", tradeEvent)
+
+			// Extract user IDs
+			makerUserID, _ := tradeEvent["maker_user_id"].(string)
+			takerUserID, _ := tradeEvent["taker_user_id"].(string)
+
+			// Prepare notification message
+			notification := map[string]interface{}{
+				"type":  "trade",
+				"event": tradeEvent,
+			}
+
+			notificationJSON, err := json.Marshal(notification)
+			if err != nil {
+				log.Printf("Failed to marshal notification: %v", err)
+				return
+			}
+
+			// Broadcast to both users involved in the trade
+			if makerUserID != "" {
+				hub.BroadcastToUser(makerUserID, notificationJSON)
+				log.Printf("Sent trade notification to maker user: %s", makerUserID)
+			}
+
+			if takerUserID != "" {
+				hub.BroadcastToUser(takerUserID, notificationJSON)
+				log.Printf("Sent trade notification to taker user: %s", takerUserID)
+			}
+		})
+
+		if err != nil {
+			log.Printf("Failed to subscribe to trades: %v", err)
+		} else {
+			log.Println("Subscribed to NATS trades topic")
+		}
+	}
 
 	// Setup HTTP routes
 	mux := http.NewServeMux()

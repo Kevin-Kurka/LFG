@@ -5,13 +5,16 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 
 # Copy shared module first
-COPY ../shared ./shared
+COPY shared ../shared
+
+# Copy matching-engine module (needed for gRPC)
+COPY matching-engine ../matching-engine
 
 # Copy service files
-COPY go.mod go.sum* ./
+COPY market-service/go.mod market-service/go.sum* ./
 RUN go mod download
 
-COPY . .
+COPY market-service/ .
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o main .

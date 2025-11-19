@@ -1,24 +1,33 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
+	pb "lfg/matching-engine/proto"
 	"lfg/shared/models"
 	"lfg/market-service/repository"
 )
 
 // MarketHandler handles HTTP requests for market operations
 type MarketHandler struct {
-	repo *repository.MarketRepository
+	repo               *repository.MarketRepository
+	matchingEngineAddr string
 }
 
 // NewMarketHandler creates a new market handler
-func NewMarketHandler(repo *repository.MarketRepository) *MarketHandler {
-	return &MarketHandler{repo: repo}
+func NewMarketHandler(repo *repository.MarketRepository, matchingEngineAddr string) *MarketHandler {
+	return &MarketHandler{
+		repo:               repo,
+		matchingEngineAddr: matchingEngineAddr,
+	}
 }
 
 // ListMarkets handles listing all available markets
@@ -118,20 +127,65 @@ func (h *MarketHandler) OrderBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := uuid.Parse(contractIDStr)
+	contractID, err := uuid.Parse(contractIDStr)
 	if err != nil {
 		respondError(w, "Invalid contract ID", http.StatusBadRequest)
 		return
 	}
 
-	// TODO: Fetch order book from matching engine via gRPC
-	// For now, return empty order book
-	orderBook := map[string]interface{}{
-		"bids": []interface{}{},
-		"asks": []interface{}{},
+	// Fetch order book from matching engine via gRPC
+	conn, err := grpc.NewClient(h.matchingEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		respondError(w, "Failed to connect to matching engine", http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+
+	client := pb.NewMatchingEngineClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	grpcReq := &pb.GetOrderBookRequest{
+		ContractId: contractID.String(),
+		Depth:      20,
 	}
 
-	respondJSON(w, orderBook, http.StatusOK)
+	resp, err := client.GetOrderBook(ctx, grpcReq)
+	if err != nil {
+		// Return empty order book if matching engine call fails
+		respondJSON(w, map[string]interface{}{
+			"contract_id": contractID,
+			"bids":        []interface{}{},
+			"asks":        []interface{}{},
+		}, http.StatusOK)
+		return
+	}
+
+	// Transform protobuf response to JSON
+	bids := make([]map[string]interface{}, len(resp.Bids))
+	for i, bid := range resp.Bids {
+		bids[i] = map[string]interface{}{
+			"price":       bid.Price,
+			"quantity":    bid.Quantity,
+			"order_count": bid.OrderCount,
+		}
+	}
+
+	asks := make([]map[string]interface{}, len(resp.Asks))
+	for i, ask := range resp.Asks {
+		asks[i] = map[string]interface{}{
+			"price":       ask.Price,
+			"quantity":    ask.Quantity,
+			"order_count": ask.OrderCount,
+		}
+	}
+
+	respondJSON(w, map[string]interface{}{
+		"contract_id": contractID,
+		"bids":        bids,
+		"asks":        asks,
+	}, http.StatusOK)
 }
 
 // Health check handler

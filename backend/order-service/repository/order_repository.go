@@ -160,3 +160,8 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, orderID uuid.UUID, s
 func (r *OrderRepository) Cancel(ctx context.Context, orderID uuid.UUID) error {
 	return r.UpdateStatus(ctx, orderID, models.OrderStatusCancelled, 0)
 }
+
+// GetPool returns the underlying database connection pool
+func (r *OrderRepository) GetPool() *pgxpool.Pool {
+	return r.pool
+}

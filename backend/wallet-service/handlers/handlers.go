@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -51,11 +52,24 @@ func (h *WalletHandler) Balance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Calculate locked balance from active orders
+	lockedBalance, err := h.repo.GetLockedBalance(r.Context(), userID)
+	if err != nil {
+		respondError(w, "Failed to calculate locked balance", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate available balance
+	availableBalance := wallet.BalanceCredits - lockedBalance
+	if availableBalance < 0 {
+		availableBalance = 0
+	}
+
 	// Return balance response
 	response := models.WalletBalanceResponse{
 		Balance:          wallet.BalanceCredits,
-		AvailableBalance: wallet.BalanceCredits, // TODO: subtract locked funds from orders
-		LockedBalance:    0,                     // TODO: calculate from active orders
+		AvailableBalance: availableBalance,
+		LockedBalance:    lockedBalance,
 	}
 
 	respondJSON(w, response, http.StatusOK)
@@ -81,6 +95,25 @@ func (h *WalletHandler) Transactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse pagination parameters
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 50
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
 	// Get wallet
 	wallet, err := h.repo.GetByUserID(r.Context(), userID)
 	if err != nil {
@@ -92,13 +125,18 @@ func (h *WalletHandler) Transactions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement transaction history from wallet_transactions table
-	// For now, return empty list
-	transactions := []models.WalletTransaction{}
+	// Get transaction history from credit_transactions table
+	transactions, err := h.repo.GetTransactionHistory(r.Context(), userID, limit, offset)
+	if err != nil {
+		respondError(w, "Failed to fetch transaction history", http.StatusInternalServerError)
+		return
+	}
 
 	respondJSON(w, map[string]interface{}{
 		"wallet_id":    wallet.ID,
 		"transactions": transactions,
+		"limit":        limit,
+		"offset":       offset,
 	}, http.StatusOK)
 }
 

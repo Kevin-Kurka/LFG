@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,15 +18,17 @@ import (
 
 // OrderHandler handles HTTP requests for order operations
 type OrderHandler struct {
-	repo             *repository.OrderRepository
+	repo               *repository.OrderRepository
 	matchingEngineAddr string
+	walletServiceURL   string
 }
 
 // NewOrderHandler creates a new order handler
-func NewOrderHandler(repo *repository.OrderRepository, matchingEngineAddr string) *OrderHandler {
+func NewOrderHandler(repo *repository.OrderRepository, matchingEngineAddr string, walletServiceURL string) *OrderHandler {
 	return &OrderHandler{
-		repo:             repo,
+		repo:               repo,
 		matchingEngineAddr: matchingEngineAddr,
+		walletServiceURL:   walletServiceURL,
 	}
 }
 
@@ -67,6 +70,22 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check wallet balance before placing order
+	if req.Type == models.OrderTypeLimit && req.LimitPriceCredits != nil {
+		requiredBalance := float64(req.Quantity) * (*req.LimitPriceCredits)
+		balance, err := h.checkWalletBalance(userIDStr)
+		if err != nil {
+			respondError(w, "Failed to check wallet balance", http.StatusInternalServerError)
+			return
+		}
+
+		if balance < requiredBalance {
+			errorMsg := fmt.Sprintf("Insufficient balance. Required: %.2f credits, Available: %.2f credits", requiredBalance, balance)
+			respondError(w, errorMsg, http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Create order in database
 	order := &models.Order{
 		ID:                uuid.New(),
@@ -84,8 +103,6 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Check wallet balance before placing order
-
 	// Submit to matching engine via gRPC
 	conn, err := grpc.NewClient(h.matchingEngineAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -99,7 +116,23 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Determine order type and side
+	// Determine order side from contract
+	var contractSide string
+	err = h.repo.GetPool().QueryRow(r.Context(), `
+		SELECT side FROM contracts WHERE id = $1
+	`, req.ContractID).Scan(&contractSide)
+
+	if err != nil {
+		respondError(w, "Failed to fetch contract details", http.StatusInternalServerError)
+		return
+	}
+
+	orderSide := pb.OrderSide_BUY
+	if contractSide == "NO" {
+		orderSide = pb.OrderSide_SELL
+	}
+
+	// Determine order type
 	orderType := pb.OrderType_MARKET
 	if req.Type == models.OrderTypeLimit {
 		orderType = pb.OrderType_LIMIT
@@ -115,7 +148,7 @@ func (h *OrderHandler) PlaceOrder(w http.ResponseWriter, r *http.Request) {
 		UserId:     userID.String(),
 		ContractId: req.ContractID.String(),
 		Type:       orderType,
-		Side:       pb.OrderSide_BUY, // TODO: Determine from contract side
+		Side:       orderSide,
 		Quantity:   int32(req.Quantity),
 		LimitPrice: limitPrice,
 	}
@@ -295,6 +328,45 @@ func (h *OrderHandler) GetOrderStatus(w http.ResponseWriter, r *http.Request) {
 // Health check handler
 func Health(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, map[string]string{"status": "healthy"}, http.StatusOK)
+}
+
+// checkWalletBalance checks the user's wallet balance via HTTP call to wallet service
+func (h *OrderHandler) checkWalletBalance(userID string) (float64, error) {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	// Create request to wallet service
+	req, err := http.NewRequest(http.MethodGet, h.walletServiceURL+"/balance", nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set user ID header
+	req.Header.Set("X-User-ID", userID)
+
+	// Make request
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("failed to call wallet service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("wallet service returned status %d", resp.StatusCode)
+	}
+
+	// Parse response
+	var balanceResp struct {
+		Balance float64 `json:"balance"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&balanceResp); err != nil {
+		return 0, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return balanceResp.Balance, nil
 }
 
 // Helper functions

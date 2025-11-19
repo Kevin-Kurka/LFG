@@ -5,13 +5,13 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /build
 
 # Copy shared module first
-COPY ../shared ./shared
+COPY shared ../shared
 
 # Copy service files
-COPY go.mod go.sum* ./
+COPY credit-exchange-service/go.mod credit-exchange-service/go.sum* ./
 RUN go mod download
 
-COPY . .
+COPY credit-exchange-service/ .
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-extldflags "-static"' -o main .

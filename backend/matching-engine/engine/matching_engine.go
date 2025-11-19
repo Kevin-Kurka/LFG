@@ -2,11 +2,13 @@ package engine
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nats-io/nats.go"
 	pb "lfg/matching-engine/proto"
 )
 
@@ -14,13 +16,15 @@ import (
 type MatchingEngine struct {
 	OrderBooks map[string]*OrderBook // Map of contract ID to OrderBook
 	mu         sync.RWMutex
+	natsConn   *nats.Conn
 	pb.UnimplementedMatchingEngineServer
 }
 
 // NewMatchingEngine creates a new matching engine
-func NewMatchingEngine() *MatchingEngine {
+func NewMatchingEngine(natsConn *nats.Conn) *MatchingEngine {
 	return &MatchingEngine{
 		OrderBooks: make(map[string]*OrderBook),
+		natsConn:   natsConn,
 	}
 }
 
@@ -79,7 +83,35 @@ func (me *MatchingEngine) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequ
 		averagePrice = totalValue / float64(quantityFilled)
 	}
 
-	// TODO: Publish trade events to NATS
+	// Publish trade events to NATS
+	if me.natsConn != nil && len(trades) > 0 {
+		for _, trade := range trades {
+			tradeEvent := map[string]interface{}{
+				"trade_id":       trade.ID,
+				"contract_id":    trade.ContractID,
+				"maker_order_id": trade.MakerOrderID,
+				"taker_order_id": trade.TakerOrderID,
+				"maker_user_id":  trade.MakerUserID,
+				"taker_user_id":  trade.TakerUserID,
+				"quantity":       trade.Quantity,
+				"price":          trade.Price,
+				"executed_at":    trade.ExecutedAt.Unix(),
+			}
+
+			eventJSON, err := json.Marshal(tradeEvent)
+			if err != nil {
+				log.Printf("Failed to marshal trade event: %v", err)
+				continue
+			}
+
+			// Publish to trades topic
+			if err := me.natsConn.Publish("trades", eventJSON); err != nil {
+				log.Printf("Failed to publish trade event: %v", err)
+			} else {
+				log.Printf("Published trade event: %s", trade.ID)
+			}
+		}
+	}
 
 	return &pb.PlaceOrderResponse{
 		OrderId:        req.OrderId,

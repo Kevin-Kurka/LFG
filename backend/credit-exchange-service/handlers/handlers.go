@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,12 +17,16 @@ import (
 
 // ExchangeHandler handles credit exchange operations
 type ExchangeHandler struct {
-	txRepo *repository.CreditTransactionRepository
+	txRepo           *repository.CreditTransactionRepository
+	walletServiceURL string
 }
 
 // NewExchangeHandler creates a new exchange handler
-func NewExchangeHandler(txRepo *repository.CreditTransactionRepository) *ExchangeHandler {
-	return &ExchangeHandler{txRepo: txRepo}
+func NewExchangeHandler(txRepo *repository.CreditTransactionRepository, walletServiceURL string) *ExchangeHandler {
+	return &ExchangeHandler{
+		txRepo:           txRepo,
+		walletServiceURL: walletServiceURL,
+	}
 }
 
 // BuyCredits handles credit purchase with cryptocurrency
@@ -83,7 +91,12 @@ func (h *ExchangeHandler) BuyCredits(w http.ResponseWriter, r *http.Request) {
 	// For demo purposes, immediately mark as completed
 	h.txRepo.UpdateStatus(r.Context(), tx.ID, models.CreditTransactionStatusCompleted)
 
-	// TODO: Credit user's wallet via internal API call or NATS event
+	// Credit user's wallet via internal API call
+	if err := h.creditWallet(userIDStr, creditAmount, tx.ID.String(), "PURCHASE"); err != nil {
+		log.Printf("Failed to credit wallet: %v", err)
+		respondError(w, "Transaction recorded but wallet credit failed", http.StatusInternalServerError)
+		return
+	}
 
 	// Return response
 	response := map[string]interface{}{
@@ -136,7 +149,18 @@ func (h *ExchangeHandler) SellCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Check user has sufficient credits in wallet
+	// Check user has sufficient credits in wallet
+	balance, err := h.getWalletBalance(userIDStr)
+	if err != nil {
+		respondError(w, "Failed to check wallet balance", http.StatusInternalServerError)
+		return
+	}
+
+	if balance < req.CreditAmount {
+		errorMsg := fmt.Sprintf("Insufficient balance. Required: %.2f credits, Available: %.2f credits", req.CreditAmount, balance)
+		respondError(w, errorMsg, http.StatusBadRequest)
+		return
+	}
 
 	// Calculate crypto amount (mock exchange rates)
 	cryptoAmount := calculateCryptoFromCredits(req.CryptoType, req.CreditAmount)
@@ -157,7 +181,13 @@ func (h *ExchangeHandler) SellCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Debit user's wallet
+	// Debit user's wallet
+	if err := h.debitWallet(userIDStr, req.CreditAmount, tx.ID.String(), "SALE"); err != nil {
+		log.Printf("Failed to debit wallet: %v", err)
+		respondError(w, "Transaction recorded but wallet debit failed", http.StatusInternalServerError)
+		return
+	}
+
 	// TODO: Process crypto payout
 	// For demo, mark as completed
 	h.txRepo.UpdateStatus(r.Context(), tx.ID, models.CreditTransactionStatusCompleted)
@@ -244,4 +274,109 @@ func respondJSON(w http.ResponseWriter, data interface{}, statusCode int) {
 
 func respondError(w http.ResponseWriter, message string, statusCode int) {
 	respondJSON(w, map[string]string{"error": message}, statusCode)
+}
+
+// getWalletBalance fetches the user's wallet balance
+func (h *ExchangeHandler) getWalletBalance(userID string) (float64, error) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", h.walletServiceURL+"/balance", nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("X-User-ID", userID)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("wallet service returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, err
+	}
+
+	balance, ok := result["available_balance"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("invalid balance response from wallet service")
+	}
+
+	return balance, nil
+}
+
+// creditWallet credits the user's wallet
+func (h *ExchangeHandler) creditWallet(userID string, amount float64, transactionID string, transactionType string) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	payload := map[string]interface{}{
+		"amount":           amount,
+		"transaction_id":   transactionID,
+		"transaction_type": transactionType,
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", h.walletServiceURL+"/credit", bytes.NewBuffer(payloadJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", userID)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("wallet service returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// debitWallet debits the user's wallet
+func (h *ExchangeHandler) debitWallet(userID string, amount float64, transactionID string, transactionType string) error {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	payload := map[string]interface{}{
+		"amount":           amount,
+		"transaction_id":   transactionID,
+		"transaction_type": transactionType,
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", h.walletServiceURL+"/debit", bytes.NewBuffer(payloadJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", userID)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("wallet service returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
 }

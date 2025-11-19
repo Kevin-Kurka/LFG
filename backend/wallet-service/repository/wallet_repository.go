@@ -224,3 +224,63 @@ func (r *WalletRepository) Transfer(ctx context.Context, fromUserID, toUserID uu
 
 	return nil
 }
+
+// GetLockedBalance calculates the locked balance from active orders
+func (r *WalletRepository) GetLockedBalance(ctx context.Context, userID uuid.UUID) (float64, error) {
+	query := `
+		SELECT COALESCE(SUM(quantity * limit_price_credits), 0) as locked_balance
+		FROM orders
+		WHERE user_id = $1 AND status = 'ACTIVE'
+	`
+
+	var lockedBalance float64
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&lockedBalance)
+	if err != nil {
+		return 0, fmt.Errorf("failed to calculate locked balance: %w", err)
+	}
+
+	return lockedBalance, nil
+}
+
+// GetTransactionHistory retrieves transaction history from credit_transactions table
+func (r *WalletRepository) GetTransactionHistory(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.CreditTransaction, error) {
+	query := `
+		SELECT id, user_id, type, crypto_type, crypto_amount, credit_amount, status, created_at, updated_at
+		FROM credit_transactions
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.pool.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transaction history: %w", err)
+	}
+	defer rows.Close()
+
+	transactions := []models.CreditTransaction{}
+	for rows.Next() {
+		var t models.CreditTransaction
+		err := rows.Scan(
+			&t.ID,
+			&t.UserID,
+			&t.Type,
+			&t.CryptoType,
+			&t.CryptoAmount,
+			&t.CreditAmount,
+			&t.Status,
+			&t.CreatedAt,
+			&t.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		transactions = append(transactions, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating transaction rows: %w", err)
+	}
+
+	return transactions, nil
+}
